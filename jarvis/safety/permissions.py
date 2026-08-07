@@ -282,13 +282,119 @@ class PermissionEngine:
 
     @staticmethod
     def _split_segments(command: str) -> list[str]:
-        """Split on shell operators so each sub-command is judged separately.
+        """Split into the pieces the shell would actually run.
 
         ``ls && rm -rf build`` must not be waved through because it starts
-        with ``ls``.
+        with ``ls``, so operators split. But a naive split on those characters
+        is wrong in both directions, and both directions bit:
+
+        * ``python3 -c 'import sys; sys.exit(3)'`` is one command. Splitting
+          the quoted argument on its semicolon tears the quote in half and
+          gets a legitimate command refused.
+        * ``echo $(rm -rf ~)`` looks like a run of ``echo``. It is not --
+          the substitution runs first, and reading only the leading token
+          waves the deletion straight through.
+
+        So this walks the string tracking quote state, splits on operators
+        only when they are unquoted, and treats the inside of ``$(...)``,
+        backticks, and ``<(...)`` as a segment in its own right. Single
+        quotes suppress substitution; double quotes do not, which is why the
+        substitution check runs inside them too.
         """
-        parts = re.split(r"&&|\|\||[;|]|\n", command)
-        return [p.strip() for p in parts if p.strip()]
+        segments: list[str] = []
+        current: list[str] = []
+        quote: str | None = None
+        # Quote state to restore when a substitution closes.
+        stack: list[str | None] = []
+        # True when the open quote came from resuming a quoted string this
+        # function cut, rather than from a quote Caleb left unterminated.
+        resumed = False
+        index = 0
+        length = len(command)
+
+        def flush(*, balance: bool) -> None:
+            # A segment cut at a substitution boundary can end mid-quote, and
+            # balancing it keeps the parser from calling valid input broken.
+            # The final flush does not balance: a quote the user actually left
+            # open is malformed, and closing it here would hide that.
+            text = "".join(current)
+            if balance and quote is not None:
+                text += quote
+            text = text.strip()
+            if text:
+                segments.append(text)
+            current.clear()
+
+        while index < length:
+            char = command[index]
+            pair = command[index:index + 2]
+
+            # Single quotes are literal all the way to the closing quote --
+            # no operators, no substitution, nothing.
+            if quote == "'":
+                if char == "'":
+                    quote = None
+                current.append(char)
+                index += 1
+                continue
+
+            if char == "\\" and index + 1 < length:
+                current.extend(command[index:index + 2])
+                index += 2
+                continue
+
+            # Substitutions run their contents, so the contents get judged.
+            if pair == "$(" or (quote is None and pair == "<("):
+                flush(balance=True)
+                stack.append(quote)
+                quote, resumed = None, False
+                index += 2
+                continue
+            if char == "`":
+                flush(balance=True)
+                if stack:
+                    quote, resumed = stack.pop(), True
+                else:
+                    stack.append(quote)
+                    quote, resumed = None, False
+                index += 1
+                continue
+            if char == ")" and quote is None and stack:
+                flush(balance=True)
+                quote = stack.pop()
+                resumed = quote is not None
+                if quote is not None:
+                    # What follows continues the quoted string the
+                    # substitution sat inside, so reopen it -- otherwise the
+                    # tail arrives as a lone quote and reads as broken input.
+                    current.append(quote)
+                index += 1
+                continue
+
+            if quote == '"':
+                if char == '"':
+                    quote = None
+                current.append(char)
+                index += 1
+                continue
+
+            if char in "'\"":
+                quote, resumed = char, False
+                current.append(char)
+                index += 1
+                continue
+
+            if char in ";|&\n":
+                flush(balance=True)
+                resumed = False
+                index += 1
+                continue
+
+            current.append(char)
+            index += 1
+
+        flush(balance=resumed)
+        return segments
 
     def _judge_single(self, segment: str) -> Decision:
         try:
@@ -298,6 +404,10 @@ class PermissionEngine:
                 False, Risk.FORBIDDEN, f"could not parse the command: {exc}",
                 matched_rule="unparseable",
             )
+        # An empty string is not a command name. These come from balancing a
+        # segment cut at a substitution boundary -- `echo "x $(date)"` leaves
+        # a trailing `""` that would otherwise read as an unknown binary.
+        tokens = [t for t in tokens if t]
         if not tokens:
             return Decision(True, Risk.SAFE, "empty segment")
 

@@ -104,6 +104,41 @@ def test_every_shell_operator_splits(engine, joiner):
     assert verdict.risk is Risk.DANGEROUS, f"{joiner!r} was not treated as a separator"
 
 
+@pytest.mark.parametrize("command", [
+    "echo $(rm -rf ~/jarvis)",
+    "echo `rm -rf ~/jarvis`",
+    "ls $(sudo apt install evil)",
+    "cat <(rm -rf x)",
+    'echo "$(rm -rf x)"',
+    'echo "nested $(echo $(rm x))"',
+])
+def test_command_substitution_is_judged_not_skipped(engine, command):
+    """``$(...)`` runs first. Reading only the leading token misses it entirely.
+
+    ``echo $(rm -rf ~/jarvis)`` looks like a run of ``echo``, and four
+    characters would otherwise walk straight past every rule in this file.
+    """
+    assert engine.judge_command(command).risk >= Risk.DANGEROUS, f"{command!r} slipped through"
+
+
+@pytest.mark.parametrize("command", [
+    "python3 -c 'import sys; sys.exit(3)'",
+    'echo "hello; world"',
+    'grep -r "a|b" .',
+    "grep 'rm -rf /' notes.txt",
+    'echo "today is $(date)"',
+    "echo $(date)",
+])
+def test_operators_inside_quotes_do_not_split_the_command(engine, command):
+    """A semicolon inside a quoted argument is text, not a separator.
+
+    Splitting on it tears the quote in half and gets ordinary commands
+    refused as unparseable.
+    """
+    verdict = engine.judge_command(command)
+    assert verdict.allowed, f"{command!r} was wrongly refused: {verdict.reason}"
+
+
 def test_a_safe_pipeline_stays_safe(engine):
     verdict = engine.judge_command("cat notes.txt | grep AAPL | sort | head -5")
     assert verdict.allowed
