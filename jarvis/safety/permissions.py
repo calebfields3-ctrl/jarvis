@@ -94,19 +94,45 @@ FORBIDDEN_PATTERNS: tuple[tuple[re.Pattern, str], ...] = (
 
 # Read-only commands. These run without interrupting Caleb.
 SAFE_COMMANDS: frozenset[str] = frozenset({
-    "ls", "pwd", "cat", "head", "tail", "wc", "grep", "rg", "find", "file",
+    "ls", "pwd", "cat", "head", "tail", "wc", "grep", "rg", "file",
     "stat", "du", "df", "tree", "which", "whereis", "type", "echo", "date",
-    "cal", "uname", "hostname", "whoami", "id", "env", "printenv", "uptime",
-    "ps", "top", "free", "sort", "uniq", "cut", "awk", "sed", "diff", "cmp",
+    "cal", "uname", "hostname", "whoami", "id", "printenv", "uptime",
+    "ps", "top", "free", "sort", "uniq", "cut", "diff", "cmp",
     "basename", "dirname", "realpath", "readlink", "sha256sum", "md5sum",
-    "python3", "python", "node", "jq", "man", "help",
-    "git",  # subcommand-screened below
+    "jq", "man", "help",
+    "git",   # subcommand-screened below
+    "find",  # -exec screened below
 })
 
 # Writes and edits. Allowed, but logged, and the path jail still applies.
 CAUTION_COMMANDS: frozenset[str] = frozenset({
     "mkdir", "touch", "cp", "mv", "ln", "tee", "chmod", "sed", "truncate",
     "tar", "zip", "unzip", "gzip", "gunzip", "make", "npm", "yarn", "cargo",
+})
+
+# Anything that runs code supplied as an argument or a file. These cannot be
+# classified by looking at them -- `python3 -c "os.system('rm -rf x')"` is a
+# read-only-looking command that does anything at all. Treating an interpreter
+# as safe hands the model a way around every other rule in this file, so they
+# stop and ask like any other dangerous thing.
+INTERPRETERS: frozenset[str] = frozenset({
+    "python", "python3", "node", "ruby", "perl", "php", "lua", "Rscript",
+    "bash", "sh", "zsh", "ksh", "dash", "fish", "osascript", "awk", "gawk",
+    "eval", "exec", "source",
+})
+
+# Commands whose job is to run another command. The wrapper itself is
+# harmless; what it wraps is the whole question. `env rm -rf x` is a run of
+# `rm`, not a run of `env`.
+WRAPPER_COMMANDS: frozenset[str] = frozenset({
+    "env", "nohup", "time", "timeout", "nice", "ionice", "stdbuf", "setsid",
+    "command", "xargs", "watch", "script",
+})
+
+# `find` is read-only right up until one of these, which run a command per
+# match -- the most efficient way to delete a lot of files by accident.
+FIND_EXECUTION_FLAGS: frozenset[str] = frozenset({
+    "-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf",
 })
 
 # Destructive, installing, or outward-facing. Always stops to ask.
@@ -396,7 +422,7 @@ class PermissionEngine:
         flush(balance=resumed)
         return segments
 
-    def _judge_single(self, segment: str) -> Decision:
+    def _judge_single(self, segment: str, depth: int = 0) -> Decision:
         try:
             tokens = shlex.split(segment)
         except ValueError as exc:
@@ -424,6 +450,27 @@ class PermissionEngine:
         if binary == "git":
             return self._judge_git(args)
 
+        if binary in WRAPPER_COMMANDS:
+            return self._judge_wrapper(binary, args, depth)
+
+        if binary in INTERPRETERS:
+            return Decision(
+                False, Risk.DANGEROUS,
+                f"{binary!r} runs whatever code it's handed, so I can't tell "
+                "from the outside what it does",
+                matched_rule=f"interpreter:{binary}",
+            )
+
+        if binary == "find":
+            flag = next((a for a in args if a in FIND_EXECUTION_FLAGS), None)
+            if flag is not None:
+                return Decision(
+                    False, Risk.DANGEROUS,
+                    f"find {flag} runs a command on every match",
+                    matched_rule=f"find:{flag}",
+                )
+            return Decision(True, Risk.SAFE, "'find' is read-only without -exec")
+
         if binary in DANGEROUS_COMMANDS:
             return Decision(
                 False, Risk.DANGEROUS,
@@ -444,6 +491,46 @@ class PermissionEngine:
             False, Risk.DANGEROUS,
             f"{binary!r} isn't a command I recognise, so I'd rather ask first",
             matched_rule="unknown_binary",
+        )
+
+    def _judge_wrapper(self, binary: str, args: Sequence[str], depth: int) -> Decision:
+        """Judge what a wrapper wraps, not the wrapper.
+
+        ``env rm -rf x`` is a run of ``rm``. Reading the leading token gets
+        ``env``, which is read-only, and waves the delete straight through.
+        """
+        if depth >= 3:
+            # Wrappers wrapping wrappers is not something a legitimate command
+            # does three deep, and unbounded recursion is its own problem.
+            return Decision(
+                False, Risk.DANGEROUS,
+                "that's wrapped in too many layers for me to see what it does",
+                matched_rule="wrapper_depth",
+            )
+
+        index = 0
+        while index < len(args):
+            token = args[index]
+            # The wrapper's own flags, its VAR=value assignments, and the bare
+            # numbers that things like `timeout 5` take.
+            if token.startswith("-") or re.fullmatch(r"\w+=.*|[\d.]+[smhd]?", token):
+                index += 1
+                continue
+            break
+
+        inner = list(args[index:])
+        if not inner:
+            return Decision(
+                True, Risk.CAUTION, f"{binary!r} with nothing to run",
+                matched_rule=f"wrapper:{binary}",
+            )
+
+        verdict = self._judge_single(shlex.join(inner), depth + 1)
+        return Decision(
+            verdict.allowed, verdict.risk,
+            f"{binary} runs {inner[0]!r}: {verdict.reason}",
+            needs_approval=verdict.needs_approval,
+            matched_rule=verdict.matched_rule,
         )
 
     @staticmethod

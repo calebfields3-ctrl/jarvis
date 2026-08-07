@@ -132,11 +132,13 @@ def test_command_substitution_is_judged_not_skipped(engine, command):
 def test_operators_inside_quotes_do_not_split_the_command(engine, command):
     """A semicolon inside a quoted argument is text, not a separator.
 
-    Splitting on it tears the quote in half and gets ordinary commands
-    refused as unparseable.
+    Splitting on it tears the quote in half, and the halves come back as
+    unparseable -- so an ordinary command gets refused as malformed. The risk
+    tier is a separate question; what's checked here is that it parsed.
     """
     verdict = engine.judge_command(command)
-    assert verdict.allowed, f"{command!r} was wrongly refused: {verdict.reason}"
+    assert verdict.matched_rule != "unparseable", f"{command!r}: {verdict.reason}"
+    assert verdict.risk is not Risk.FORBIDDEN
 
 
 def test_a_safe_pipeline_stays_safe(engine):
@@ -230,6 +232,73 @@ def test_the_git_subcommand_sets_do_not_overlap():
 # ------------------------------------------------------------ fail-closed
 
 
+@pytest.mark.parametrize("command", [
+    "python3 -c \"import os; os.system('rm -rf x')\"",
+    "python -c 'print(1)'",
+    "node -e 'require(\"fs\").rmSync(\"/\")'",
+    "bash -c 'rm -rf x'",
+    "sh script.sh",
+    "perl -e 'unlink glob \"*\"'",
+    "awk 'BEGIN{system(\"rm x\")}'",
+])
+def test_interpreters_are_dangerous_because_their_contents_are_unreadable(engine, command):
+    """An interpreter rated safe hands the model a way around every other rule.
+
+    ``python3 -c "os.system('rm -rf x')"`` looks like a read-only command from
+    the outside and does anything at all on the inside.
+    """
+    verdict = engine.judge_command(command)
+    assert not verdict.allowed, f"{command!r} was waved through"
+    assert verdict.risk is Risk.DANGEROUS
+
+
+@pytest.mark.parametrize("command", [
+    "env rm -rf x",
+    "timeout 5 rm x",
+    "nohup rm x",
+    "xargs rm",
+    "nice -n 10 rm x",
+    "env FOO=bar rm x",
+    "nohup env timeout 5 rm x",
+])
+def test_a_wrapper_is_judged_by_what_it_wraps(engine, command):
+    """``env rm -rf x`` is a run of rm. Reading the first token gets ``env``."""
+    assert engine.judge_command(command).risk is Risk.DANGEROUS, f"{command!r} slipped through"
+
+
+@pytest.mark.parametrize("command", ["env ls -la", "timeout 5 cat notes.txt", "nice grep x ."])
+def test_a_wrapper_around_something_harmless_stays_harmless(engine, command):
+    assert engine.judge_command(command).allowed
+
+
+def test_wrappers_nested_past_reason_are_refused(engine):
+    """Legitimate commands do not wrap four deep; unbounded recursion is its own bug."""
+    verdict = engine.judge_command("env env env env env ls")
+    assert not verdict.allowed
+
+
+@pytest.mark.parametrize("flag", ["-exec", "-execdir", "-delete", "-ok"])
+def test_find_that_runs_things_is_dangerous(engine, flag):
+    """find is read-only right up until it isn't."""
+    verdict = engine.judge_command(f"find . -name '*.tmp' {flag} rm {{}} ;")
+    assert verdict.risk is Risk.DANGEROUS
+
+
+def test_plain_find_is_still_read_only(engine):
+    assert engine.judge_command("find . -name '*.py' -type f").risk is Risk.SAFE
+
+
+def test_the_command_sets_do_not_overlap_each_other():
+    """A command in two sets is classified by the order of the ifs, not by policy."""
+    from jarvis.safety.permissions import CAUTION_COMMANDS, INTERPRETERS, WRAPPER_COMMANDS
+
+    assert not (SAFE_COMMANDS & CAUTION_COMMANDS)
+    assert not (SAFE_COMMANDS & DANGEROUS_COMMANDS)
+    assert not (CAUTION_COMMANDS & DANGEROUS_COMMANDS)
+    assert not (SAFE_COMMANDS & INTERPRETERS)
+    assert not (SAFE_COMMANDS & WRAPPER_COMMANDS)
+
+
 @pytest.mark.parametrize("command", ["frobnicate --all", "./deploy.sh", "/usr/local/bin/mystery"])
 def test_unknown_binaries_are_treated_as_dangerous(engine, command):
     """An allowlist that fails open is not an allowlist."""
@@ -256,11 +325,6 @@ def test_a_full_path_does_not_disguise_the_binary(engine):
 def test_environment_prefixes_are_skipped_to_find_the_binary(engine):
     assert engine.judge_command("FOO=1 BAR=2 ls").risk is Risk.SAFE
     assert engine.judge_command("FOO=1 rm x.txt").risk is Risk.DANGEROUS
-
-
-def test_the_two_command_sets_do_not_disagree():
-    """A command in both sets would be classified by dict ordering, not policy."""
-    assert not (SAFE_COMMANDS & DANGEROUS_COMMANDS)
 
 
 # ---------------------------------------------------------------- path jail
