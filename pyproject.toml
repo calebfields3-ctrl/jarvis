@@ -8,7 +8,10 @@ version = "1.0.0"
 description = "Jarvis -- a self-learning AI trading assistant with persistent memory"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["PyYAML>=6.0"]
+# anthropic is what gives him a mind rather than a lookup table. The code
+# degrades to the built-in router if it is missing, so the install still
+# succeeds on a box that cannot reach PyPI.
+dependencies = ["PyYAML>=6.0", "anthropic>=0.69"]
 
 [project.optional-dependencies]
 market = ["yfinance>=0.2.40"]
@@ -39,6 +42,8 @@ packages = [
     "jarvis.learning",
     "jarvis.safety",
     "jarvis.voice",
+    "jarvis.agent",
+    "jarvis.gui",
 ]
 
 # The editable data files (watchlist, curated sources, news feeds) live in

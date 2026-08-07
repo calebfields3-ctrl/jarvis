@@ -1,10 +1,55 @@
 # Jarvis
 
-A self-learning AI trading assistant. Wakes on "hey Jarvis", greets Caleb by
-name, opens with a portfolio summary including the previous day's P/L, and
-remembers everything across sessions. It starts with foundational trading
-knowledge and builds real expertise by studying curated sources — then grades
-itself against what the market actually did.
+A self-learning AI trading assistant with a real mind, real control of its own
+machine, and a face. Say "hey Jarvis" and he's there — no command to type, no
+window to find. He greets Caleb by name, opens with the portfolio and the
+previous day's P/L, and remembers everything across sessions. He starts with
+foundational trading knowledge and builds real expertise by studying curated
+sources — then grades himself against what the market actually did.
+
+```
+$ jarvis
+```
+
+A dark window, a glowing ring, and a wake word. The ring is the interface: it
+brightens and speeds up when he's listening, ticks over while he works, pulses
+when he speaks, and turns amber when he needs your say-so before doing
+something. Type in the box at the bottom if you'd rather not talk.
+
+Behind it, Claude Opus 5 holds seventeen tools — a shell, the filesystem, a
+browser, and everything below. Every one of them goes through a permission
+engine first.
+
+---
+
+## Three layers between him and your machine
+
+An LLM with shell access needs guardrails that are actually load-bearing, not
+a prompt asking it nicely.
+
+1. **A denylist no approval can override.** `rm -rf /`, `curl | bash`, fork
+   bombs, raw block-device writes, touching `/etc/shadow`. Refused even if
+   Caleb says yes — the likeliest reason the model produced one is that
+   something went wrong.
+2. **Risk tiers, as data rather than scattered conditionals.** Reads run.
+   Writes run and are logged. Deletes, installs, and anything outward-facing
+   stop and ask. Compound commands are split and judged by their worst
+   segment, `$(...)` and backticks are judged rather than skipped, and an
+   unrecognised binary is dangerous — an allowlist that fails open is not an
+   allowlist.
+3. **A path jail** that resolves symlinks and `..` before checking, applies to
+   files that don't exist yet, and refuses `~/.ssh` even though it sits inside
+   the allowed root.
+
+Everything lands in `~/.jarvis/audit.jsonl`. Ask him for the audit trail.
+
+He runs inside a Chromebook's Linux container, which is a sealed box. That box
+is entirely his; ChromeOS outside it is not, and no amount of permission
+changes that.
+
+---
+
+## The older text-only loop
 
 ```
 $ jarvis run
@@ -88,9 +133,20 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[all]"     # or: pip install -r requirements.txt
 ```
 
-Nothing is required beyond PyYAML. Every integration below degrades gracefully:
-no key means that capability reports itself as unavailable, and the rest keeps
-running.
+Then set the key that gives him a mind:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...      # console.anthropic.com -> API keys
+```
+
+`./setup.sh` asks for this and writes it to your shell profile for you. A few
+dollars a month covers normal use.
+
+Everything degrades gracefully. No API key and he falls back to the built-in
+router — less capable, still useful, and it's also what runs when the network
+is down. No `python3-tk` and he runs in the terminal instead of a window. No
+microphone packages and you type instead of talking. Each step down is
+announced once, in a sentence.
 
 ```bash
 jarvis status        # what's configured, what isn't
@@ -107,8 +163,7 @@ jarvis buy AAPL 100 182.30
 jarvis buy NVDA 50 118.75
 
 jarvis bootstrap          # replay 2 years of history to build a track record
-jarvis wake               # the greeting
-jarvis run                # the real thing: wake word + background monitoring
+jarvis                    # the real thing: window, wake word, mind
 ```
 
 `jarvis bootstrap` matters. Without it, every pattern is an untested hypothesis
@@ -195,6 +250,31 @@ Jarvis opens a link only when it clears all three:
 Anything merely "probably fine" comes back `unknown` and is **not followed**.
 Set `JARVIS_REQUIRE_SAFE_BROWSING=1` to demand an active Safe Browsing clear
 for every URL, allowlist included.
+
+### A real mind, not a router
+Ask the older loop something nobody wrote a route for and it shrugs. `jarvis`
+puts Claude Opus 5 in that seat with seventeen tools — the shell, files,
+`open_in_browser`, safe web search, and every trading and learning capability
+below. He decides what to reach for.
+
+Three details that aren't obvious:
+
+- **Approval happens inside the tool**, and a decline comes back as an ordinary
+  tool result. Claude reads "you declined that one" and adapts, rather than
+  hitting an exception it might try to route around.
+- **`stop_reason == "refusal"` is checked before the content is read.** On a
+  refusal the content blocks are not an answer; reading them produces gibberish
+  presented as a reply.
+- **Paused turns are resumed.** The Python tool runner exits on `pause_turn`
+  instead of continuing, which looks exactly like a finished answer that
+  happens to be truncated — no error, no warning. The conversation is mirrored
+  as the runner iterates so it can be restarted.
+
+The system prompt is built once per session, not per turn. A clock reading in
+the prefix would change the cached bytes every message and silently re-bill the
+whole prompt and every tool schema at full rate.
+
+There is deliberately no tool that places an order.
 
 ### Day trading
 Daily bars answer "should I own this for weeks". Day trading is a different
@@ -351,7 +431,9 @@ they just type.
 
 | Command | What it does |
 |---|---|
-| `jarvis run` | Wake-word loop plus background scan / news / study threads |
+| `jarvis` | **The whole thing** — window, wake word, and the full agent |
+| `jarvis start --no-window` | Same, but in the terminal |
+| `jarvis run` | The older text-only wake-word loop, with background monitoring |
 | `jarvis wake` | Print the greeting once |
 | `jarvis ask "..."` | One question |
 | `jarvis scan [SYMBOLS]` | Sweep the watchlist for setups |
@@ -387,6 +469,8 @@ All optional; all read from the environment.
 | `JARVIS_WAKE_PHRASE` | Default `hey jarvis` |
 | `JARVIS_PERSONA` | `jarvis` (the butler, default) or `plain` |
 | `JARVIS_ADDRESS` | How he addresses you (default `sir`; empty drops it) |
+| `ANTHROPIC_API_KEY` | **His mind.** Without it he falls back to the built-in router |
+| `JARVIS_EFFORT` | How hard he thinks: `low`…`max` (default `medium`) |
 | `JARVIS_VOICE` | `1` to enable microphone and speech |
 | `PICOVOICE_ACCESS_KEY` | On-device wake word |
 | `GOOGLE_SAFE_BROWSING_KEY` | URL threat verification |
@@ -429,7 +513,23 @@ you're past a limit.
 **Jarvis does not trade.** It analyses, tracks and reports. There is no broker
 integration and no order placement anywhere in the codebase. Every execution
 decision is yours. Its output is decision support, not advice, and it says so
-on every symbol briefing.
+on every symbol briefing. The guarantee is structural rather than a matter of
+instructions: there is no tool that could place an order, so no prompt can talk
+him into it.
+
+**Giving an LLM a shell is a real risk and the guardrails are real code.** Not
+a prompt asking nicely — a denylist no approval overrides, risk tiers that fail
+closed on anything unrecognised, and a path jail that resolves symlinks before
+it decides. Two holes turned up while writing the tests for it: `git -c
+core.pager='rm -rf ~/jarvis' log` was rated safe, and so was `echo $(rm -rf
+~/jarvis)`. Both are fixed and both have tests. Assume there are others, keep
+the audit log, and don't run this as root.
+
+**Anything he reads is data, not instructions.** Web pages, news, file
+contents, and transcripts are things people wrote, and some are written to
+manipulate whatever reads them. That's stated in the system prompt, but a
+prompt is a request rather than a mechanism — the permission engine is what
+actually holds.
 
 **Day trading is the hardest way to make money in markets.** The consistent
 finding across regulator and academic studies is that most day traders lose,

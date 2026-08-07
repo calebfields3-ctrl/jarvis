@@ -10,7 +10,7 @@
   // Printed every time you attach, including on a phone where the README is
   // not visible next to the terminal.
   "postAttachCommand": {
-    "hello": "echo '\\n  Jarvis is ready.\\n\\n    jarvis wake       say hello\\n    jarvis run        the full thing (type: hey jarvis)\\n    jarvis brief      pre-market briefing\\n    jarvis daytrade   intraday setups\\n    jarvis review     coaching on your trades\\n'"
+    "hello": "echo '\\n  Jarvis is ready.\\n\\n    jarvis            the full thing (no window here -- runs in this terminal)\\n    jarvis brief      pre-market briefing\\n    jarvis daytrade   intraday setups\\n    jarvis review     coaching on your trades\\n\\n  Set ANTHROPIC_API_KEY as a Codespaces secret to give him a mind.\\n'"
   },
 
   "customizations": {

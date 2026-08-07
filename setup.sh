@@ -32,6 +32,23 @@ if [ "$PY_OK" != "1" ]; then
 fi
 say "Python $(python3 --version 2>&1 | cut -d' ' -f2) -- good."
 
+# ------------------------------------------------------- 1b. System packages
+# tkinter is not a pip package -- it ships with the system Python, and on
+# Debian it is split into python3-tk. Without it there is no window, so this
+# is worth a try even though it needs a password.
+if ! python3 -c "import tkinter" >/dev/null 2>&1; then
+    say "Installing the window toolkit (you may be asked for a password -- press Enter if you never set one)..."
+    sudo apt-get install -y python3-tk >/dev/null 2>&1 || true
+    if python3 -c "import tkinter" >/dev/null 2>&1; then
+        say "Window toolkit installed."
+    else
+        warn "Couldn't install python3-tk, so Jarvis will run in the terminal instead of a window."
+        warn "To fix it later:  sudo apt install -y python3-tk"
+    fi
+else
+    say "Window toolkit already present."
+fi
+
 # ------------------------------------------------------- 2. Virtual environment
 # A venv keeps Jarvis's packages separate from the system Python, so nothing
 # here can break anything else on the machine.
@@ -61,6 +78,26 @@ fi
 
 command -v jarvis >/dev/null 2>&1 || die "Jarvis installed but is not on the PATH. Try closing the terminal, reopening it, and running ./setup.sh again."
 
+# --------------------------------------------------------------- 3b. The key
+# Without this he falls back to matching your words against a list, which
+# works but is a shadow of the real thing. The key is written to ~/.bashrc
+# rather than into the repo, so it never lands in git.
+if [ -z "${ANTHROPIC_API_KEY:-}" ] && ! grep -q "ANTHROPIC_API_KEY" "$HOME/.bashrc" 2>/dev/null; then
+    printf "\n"
+    printf "  ${BOLD}Jarvis needs an Anthropic API key to think.${OFF}\n"
+    printf "  Get one at ${BOLD}console.anthropic.com${OFF} -> API keys. Costs a few dollars a month.\n"
+    printf "  Paste it here, or just press Enter to skip (he still runs, less cleverly).\n\n"
+    printf "  Key: "
+    read -r JARVIS_KEY </dev/tty || JARVIS_KEY=""
+    if [ -n "$JARVIS_KEY" ]; then
+        printf "export ANTHROPIC_API_KEY=%s\n" "$JARVIS_KEY" >> "$HOME/.bashrc"
+        export ANTHROPIC_API_KEY="$JARVIS_KEY"
+        say "Key saved. New terminals will have it."
+    else
+        warn "No key. Jarvis will use his built-in routing. Run ./setup.sh again to add one."
+    fi
+fi
+
 # ------------------------------------------------------------- 4. Bootstrap
 # Without a track record he reports every setup as untested, which is a poor
 # and misleading first impression.
@@ -88,11 +125,13 @@ fi
 printf "\n${GREEN}${BOLD}Jarvis is ready.${OFF}\n\n"
 printf "  ${BOLD}Run this one line now${OFF} (just this once -- new terminals do it for you):\n\n"
 printf "    ${BOLD}source .venv/bin/activate${OFF}\n\n"
-printf "  Then try:\n\n"
-printf "    ${BOLD}jarvis wake${OFF}       he says hello\n"
-printf "    ${BOLD}jarvis run${OFF}        the full thing -- then type: hey jarvis\n"
+printf "  Then just type:\n\n"
+printf "    ${BOLD}jarvis${OFF}\n\n"
+printf "  That opens him. Say ${BOLD}\"hey Jarvis\"${OFF} or type in the box at the bottom.\n\n"
+printf "  Other things he does:\n\n"
 printf "    ${BOLD}jarvis brief${OFF}      pre-market briefing\n"
-printf "    ${BOLD}jarvis train${OFF}      he teaches you to day trade\n\n"
+printf "    ${BOLD}jarvis train${OFF}      he teaches you to day trade\n"
+printf "    ${BOLD}jarvis daytrade${OFF}   intraday setups right now\n\n"
 printf "  Add your money and positions when you are ready:\n\n"
 printf "    ${BOLD}jarvis deposit 500${OFF}\n"
 printf "    ${BOLD}jarvis buy AAPL 2 182.30${OFF}\n\n"

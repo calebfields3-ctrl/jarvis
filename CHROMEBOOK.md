@@ -62,7 +62,7 @@ Copy this line, click into the Terminal, paste with **`Ctrl + Shift + V`**, and
 press **Enter**:
 
 ```
-sudo apt update && sudo apt install -y git python3 python3-venv python3-pip
+sudo apt update && sudo apt install -y git python3 python3-venv python3-pip python3-tk
 ```
 
 **What to expect:**
@@ -74,8 +74,8 @@ sudo apt update && sudo apt install -y git python3 python3-venv python3-pip
   blinking cursor.
 
 > `sudo` means "do this as the administrator". `apt` is how Linux installs
-> programs. You're installing git (to download code) and Python (the language
-> Jarvis is written in).
+> programs. You're installing git (to download code), Python (the language
+> Jarvis is written in), and the toolkit that draws his window.
 
 ---
 
@@ -106,6 +106,12 @@ That last one does all the real work and takes a few minutes. It checks your
 Python, builds a sealed environment, installs everything, and then spends about
 30 seconds building Jarvis's track record from historical market data.
 
+**Partway through it asks for an Anthropic API key.** This is what gives him a
+mind instead of a lookup table — with it he can actually think, use your
+computer, and answer things nobody wrote an answer for. See *Getting the key*
+below. You can press Enter to skip it; he still runs, just less cleverly, and
+you can add it later by running `./setup.sh` again.
+
 If anything goes wrong it stops and tells you exactly what to do. **Running
 `./setup.sh` again is always safe** — it skips whatever already worked.
 
@@ -113,35 +119,55 @@ If anything goes wrong it stops and tells you exactly what to do. **Running
 
 ---
 
+## Getting the key
+
+1. In Chrome, go to **console.anthropic.com** and sign up.
+2. Add a little credit — **$5 is plenty to start**.
+3. Go to **API keys** → **Create key**, and copy it.
+4. Paste it when `./setup.sh` asks. (Pasting into the Terminal shows nothing —
+   that's normal, it's hidden on purpose. Just press Enter.)
+
+Expect a few dollars a month for normal use. Every reply tells you nothing
+about cost, but `jarvis status` shows what the session has spent.
+
+---
+
 ## Part 4 — Say hello
 
 ```
-jarvis wake
+jarvis
 ```
 
-He should greet you by name and tell you your portfolio is empty. **That's it
-working.**
+That's the whole command. A dark window opens with a glowing ring in the middle
+— that's him.
 
-Now try the real thing:
-
-```
-jarvis run
-```
-
-Type `hey jarvis` and press Enter. He'll greet you. From then on just type
-normal sentences:
+**Say "hey Jarvis" out loud.** The ring brightens and speeds up when he's
+listening. Then just talk:
 
 ```
 how's my portfolio
 what setups are you seeing
+what's eating my disk space
+open NVDA's chart
 teach me to day trade
-tell me about NVDA
 can I trade today
-keep an eye on NVDA above 200
-goodbye
 ```
 
-To shut it down completely, hold **`Ctrl + C`**.
+You can also type in the box at the bottom if you'd rather not talk.
+
+**When he wants to do something that could break things** — delete a file,
+install something — the ring turns amber and a box asks you first. Nothing
+destructive happens without you clicking yes. A few things he won't do at all,
+even if you say yes, and he'll tell you which.
+
+To shut him down, close the window.
+
+> **If no window appears** and it stays in the terminal, the toolkit is
+> missing. Run `sudo apt install -y python3-tk` and start him again.
+
+> **If "hey Jarvis" does nothing**, the microphone packages aren't installed.
+> Run `pip install 'jarvis-trading-assistant[voice]'` inside the venv, or just
+> type to him — everything works either way.
 
 ---
 
@@ -155,7 +181,7 @@ cd ~/jarvis
 source .venv/bin/activate
 ```
 
-Then `jarvis wake`, or anything else.
+Then `jarvis`, or anything else.
 
 ### Make that automatic (optional but worth it)
 
@@ -166,7 +192,7 @@ will start inside Jarvis's folder, ready to go:
 echo 'cd ~/jarvis && source .venv/bin/activate' >> ~/.bashrc
 ```
 
-Close the Terminal, open it again, and just type `jarvis wake`.
+Close the Terminal, open it again, and just type `jarvis`.
 
 ---
 
@@ -207,6 +233,22 @@ works; the numbers just aren't real. Check your Wi-Fi.
 **Every setup says "untested"**
 Run `jarvis bootstrap`.
 
+**No window opens — it stays in the terminal**
+`sudo apt install -y python3-tk`, then start him again.
+
+**"hey Jarvis" doesn't do anything**
+The microphone packages aren't installed, or ChromeOS hasn't given the Linux
+container mic access (Settings → Linux → Microphone). Typing works regardless.
+
+**He says he's using built-in routing**
+No API key. Run `./setup.sh` again and paste one when it asks.
+
+**He refuses something and you think he's wrong**
+Some things are refused permanently and no amount of asking changes it — that
+list is in `jarvis/safety/permissions.py` and it's short. Everything else just
+needs you to click yes. `jarvis` → ask him to show you the audit trail to see
+exactly what he's done and what was blocked.
+
 **You want to wipe everything and start fresh**
 `rm -rf ~/jarvis/.venv` then `./setup.sh` reinstalls.
 `rm -rf ~/.jarvis` erases his memory — your name, trades, everything he learned.
@@ -236,6 +278,26 @@ about 60 hours a month, and this repo is already set up to install itself.
 Everything else in this guide works the same from there. Remember to **stop**
 the codespace when you're done (Code → Codespaces → ⋯ → Stop) so it doesn't
 use up your free hours sitting idle.
+
+---
+
+## What he can and can't reach
+
+He has real control of the Linux container — a shell, your files in there, and
+the ability to open pages in Chrome. He does not have ChromeOS. He can't read
+your Gmail, click your tabs, or see your Downloads folder, because the Linux
+container is a sealed box and that's the whole reason it's safe to turn on.
+That's a hardware fact, not a setting.
+
+Inside his box, three things sit between him and anything destructive:
+
+1. A short list of things he will never do, with or without your permission.
+2. Anything that deletes, installs, or reaches the network stops and asks you.
+3. He's confined to your home folder, and `~/.ssh`, `~/.aws` and the system
+   folders are off limits even inside it.
+
+Everything he does is written to `~/.jarvis/audit.jsonl`. Ask him for the audit
+trail any time.
 
 ---
 

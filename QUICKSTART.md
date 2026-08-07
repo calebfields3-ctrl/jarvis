@@ -38,6 +38,23 @@ pip install -e ".[all]"
 
 That last line takes a minute or two — it pulls in pandas and yfinance.
 
+Then set the key that gives him a mind:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...    # console.anthropic.com -> API keys
+```
+
+Without it he falls back to matching your words against a list of things he
+knows how to do. That still works — it's also what runs when the network is
+down — but it's a shadow of the real thing. A few dollars a month covers
+normal use.
+
+On Linux you also want the window toolkit, which isn't a pip package:
+
+```bash
+sudo apt install -y python3-tk       # macOS and Windows already have it
+```
+
 **You'll know it worked when:**
 
 ```bash
@@ -58,7 +75,7 @@ prints your name, the memory path, and `Watchlist: 677 symbols`.
 jarvis bootstrap        # takes ~30s; builds his track record from history
 jarvis deposit 25000    # your starting cash (use your real number)
 jarvis buy AAPL 10 182.30   # any positions you already hold: SYMBOL QTY PRICE
-jarvis wake             # say hello
+jarvis                  # open him
 ```
 
 **`jarvis bootstrap` is not optional.** Without it every pattern he knows is
@@ -68,7 +85,14 @@ future bar — and grades every signal on what actually followed. That's what
 turns "I read that breakouts work" into "breakouts hit 34% over 136 samples,
 so I've retired that one."
 
-After `jarvis wake` you should see him greet you by name with your portfolio.
+A dark window opens with a glowing ring, and he greets you by name with your
+portfolio. Say **"hey Jarvis"** or type in the box at the bottom.
+
+The ring is the interface: brighter and faster when he's listening, ticking
+over while he works, pulsing when he speaks, amber when he needs your say-so
+before doing something. When that happens a box asks you first — nothing
+destructive runs without you clicking yes, and a short list of things he
+refuses outright no matter what you click.
 
 ---
 
@@ -101,13 +125,20 @@ jarvis train            # the next module of the day-trading curriculum
 ## 5. The full experience
 
 ```bash
-jarvis run
+jarvis
 ```
 
-This is the one you actually want running. It waits for **"hey jarvis"** while
-background threads keep scanning charts, reading the news wire and studying.
-Type the wake phrase (or say it, if you set up voice below), talk to him, and
-say "goodbye" when you're done. Ctrl-C stops it.
+That's it — no subcommand. Window, wake word, and the full agent behind it.
+Close the window to stop him.
+
+He has real control of the machine he's running on: a shell, your files, and
+the ability to open pages in your browser. So you can ask him things no router
+would ever have an answer for — "what's eating my disk", "make me a folder for
+this month's trade journal", "pull up NVDA's chart". Everything he does is
+written to `~/.jarvis/audit.jsonl`; ask him for the audit trail any time.
+
+Prefer the terminal? `jarvis start --no-window`. Want the older text-only loop
+with background monitoring threads? `jarvis run`.
 
 Ask him things in plain English:
 
