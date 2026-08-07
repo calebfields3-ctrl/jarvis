@@ -76,8 +76,11 @@ work** in the market it watches. That is the whole point.
 
 ## Install
 
-**New here? See [QUICKSTART.md](QUICKSTART.md)** — prerequisites, first run,
-the daily rhythm, and troubleshooting, all verified end to end.
+**New here?**
+- **On a Chromebook, or this is your first computer?** → **[CHROMEBOOK.md](CHROMEBOOK.md)**
+- **Anywhere else** → [QUICKSTART.md](QUICKSTART.md)
+
+Both are verified end to end. Or just clone and run `./setup.sh`.
 
 ```bash
 git clone <this repo> && cd jarvis
