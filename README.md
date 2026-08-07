@@ -19,20 +19,23 @@ Waiting for "hey jarvis"...
 
 > hey jarvis
 
-Good morning, Caleb. Jarvis online.
-It's been 14 hours since we last spoke.
+Good morning, Caleb.
+It has been 14 hours since we last spoke. I've kept watch.
 
-Portfolio: $100,303.12 across 3 positions.
-Since the 2026-08-06 close you're up $1,504.55 (+1.52%).
-Best position: NVDA +19.7% ($+2,324.15 open).
-Weakest: XOM -3.1% ($-689.40 open).
-Last 22 sessions on record: $+6,410.22 (+6.83%), 13 up days vs 9 down.
+The portfolio stands at $100,303.12 across 3 positions.
+You're up $1,504.55, or 1.52%, against the 2026-08-06 close.
+NVDA is carrying you at +19.7% (+$2,324.15 open).
+I'd draw your attention to XOM at -8.1% (-$689.40 open).
+Over the last 22 sessions on record: +$6,410.22 (+6.83%), 13 up days
+against 9 down. A respectable stretch.
 
-Overnight headlines worth your attention:
+Overnight, a few items I thought you'd want:
   - Fed signals slower pace of cuts after inflation print (Reuters) [SPY, TLT]
 
-My read on markets is competent right now (score 0.49) -- 214 lessons held,
-1,295 predictions graded.
+XOM has gone below 105.00, sir -- it's at 104.20 now. You asked to know.
+
+I am becoming useful, sir -- 214 lessons held and 1,295 predictions graded,
+which puts me at competent (0.49).
 ```
 
 ---
@@ -277,7 +280,59 @@ It detects: cutting winners while holding losers, revenge sizing (scoped to
 reflex), overnight drift on intended day trades, midday entries, overtrading,
 and insufficient sample size.
 
-### Voice
+### His voice
+He is the butler: formal, precise, British, dry, and quietly protective. He
+greets you by name and says "sir" everywhere else.
+
+Every user-facing sentence lives in `jarvis/persona.py` rather than being
+scattered through the logic. That is a structural choice, not a cosmetic one:
+
+- **The voice is swappable.** `JARVIS_PERSONA=plain` gives flat factual
+  reporting; `JARVIS_ADDRESS=boss` changes the honorific; `JARVIS_ADDRESS=`
+  drops it entirely. Nothing in `brain.py` changes either way.
+- **The logic stays testable.** `brain.py` computes what is true; the persona
+  decides how to say it. Tests assert on facts without matching prose, and on
+  prose without recomputing facts.
+
+Two rules keep him from becoming a parody, and both are enforced by tests:
+
+- **The numbers are never dressed up.** Only the framing around them changes.
+  `test_numbers_are_identical_across_personas` asserts the figures are
+  byte-identical in every voice.
+- **He is more forceful about risk than about opportunity.** Enthusiasm for a
+  setup is understated; objection to a bad decision is not. When you're past a
+  limit, he says *"I'd rather not, sir"* and means it.
+
+He is also candid about his own limits. With nothing graded yet he says so
+outright rather than sounding authoritative:
+
+```
+I hold 82 lessons but have graded nothing yet, sir, so treat my opinions as
+reading rather than experience. A run of `jarvis bootstrap` would fix that.
+```
+
+### Standing watches
+Tell him once and he remembers:
+
+```
+$ jarvis watch XOM below 105
+I'll keep an eye on XOM and tell you if it goes below 105.00.
+
+$ jarvis ask "tell me if NVDA hits 200"
+I'll keep an eye on NVDA and tell you if it goes above 200.00.
+```
+
+Watches persist across restarts, are checked on every scan cycle and in every
+greeting, and fire **exactly once** — a watch that repeats every cycle stops
+being an alert and becomes noise.
+
+### Pre-market brief
+`jarvis brief` — everything worth knowing before the bell, ordered by what can
+hurt you first: your open risk, then your remaining day trades under the PDT
+rule, then the news that could reprice what you hold, then what you asked to be
+told, and only then the opportunities.
+
+### Voice I/O
 Wake word falls back in a defined order: Picovoice Porcupine (ships a built-in
 "jarvis" keyword, fully on-device) → continuous speech recognition matching the
 phrase → typing it at a prompt. Same for listening (SpeechRecognition → stdin)
@@ -294,6 +349,8 @@ they just type.
 | `jarvis wake` | Print the greeting once |
 | `jarvis ask "..."` | One question |
 | `jarvis scan [SYMBOLS]` | Sweep the watchlist for setups |
+| `jarvis brief` | Pre-market briefing |
+| `jarvis watch SYM above\|below N` | Standing alert on a price level |
 | `jarvis daytrade` | Intraday setups with sizing and risk checks |
 | `jarvis plan SYM long E S T` | Size a trade from its stop |
 | `jarvis risk` | PDT rule and today's circuit breakers |
@@ -322,6 +379,8 @@ All optional; all read from the environment.
 | `JARVIS_HOME` | Memory location (default `~/.jarvis`) |
 | `JARVIS_DATA_DIR` | Where the editable data files live (auto-detected) |
 | `JARVIS_WAKE_PHRASE` | Default `hey jarvis` |
+| `JARVIS_PERSONA` | `jarvis` (the butler, default) or `plain` |
+| `JARVIS_ADDRESS` | How he addresses you (default `sir`; empty drops it) |
 | `JARVIS_VOICE` | `1` to enable microphone and speech |
 | `PICOVOICE_ACCESS_KEY` | On-device wake word |
 | `GOOGLE_SAFE_BROWSING_KEY` | URL threat verification |
@@ -344,7 +403,7 @@ Editable data files:
 ## Tests
 
 ```bash
-pytest -q      # 214 tests, ~6s, no network required
+pytest -q      # 263 tests, ~8s, no network required
 ```
 
 Coverage includes portfolio arithmetic (average cost, realised P/L, day-over-day
@@ -352,8 +411,10 @@ P/L), indicator correctness, every detector against hand-built bar sequences,
 the safety gate's verdicts, trader vetting including scam disqualification, the
 reinforcement loop (promotion, retirement, foundations never retiring), news
 scoring and feed parsing, memory surviving restarts, the session clock and
-intraday detectors, position sizing and the PDT rule, and every coaching
-diagnosis against synthetic bad habits.
+intraday detectors, position sizing and the PDT rule, every coaching diagnosis
+against synthetic bad habits, and the persona layer — including that every
+voice greets you by name, keeps its numbers identical, and still refuses when
+you're past a limit.
 
 ---
 

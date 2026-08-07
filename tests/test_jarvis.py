@@ -55,8 +55,10 @@ def test_greeting_includes_previous_day_pnl(jarvis):
     jarvis.provider.prices = lambda syms: monkey_price  # type: ignore[method-assign]
 
     greeting = jarvis.wake()
+    # Assert on the facts, not the phrasing -- the wording belongs to the
+    # persona and is covered by tests/test_persona.py.
     assert "up $200.00" in greeting
-    assert "Portfolio:" in greeting
+    assert "$10,200.00" in greeting
 
 
 def test_wake_records_a_session_that_persists(jarvis, config):
@@ -133,8 +135,9 @@ def test_scan_survives_tradingview_being_unavailable(jarvis):
 
 
 def test_scan_briefing_is_readable(jarvis):
-    briefing = jarvis.scan_briefing(jarvis.scan_market(["AAPL", "MSFT", "NVDA"]))
-    assert "Watched 3 charts" in briefing
+    report = jarvis.scan_market(["AAPL", "MSFT", "NVDA"])
+    briefing = jarvis.scan_briefing(report)
+    assert jarvis.voice.scan_summary(3, 3, len(report.detections)) in briefing
 
 
 def test_untested_patterns_are_labelled_as_hypotheses(jarvis):
@@ -187,7 +190,7 @@ def test_learning_never_invents_a_track_record(jarvis):
 # ----------------------------------------------------------------- answering
 def test_answers_portfolio_questions(jarvis):
     jarvis.portfolio.record_cash(1_000)
-    assert "Portfolio" in jarvis.ask("how is my portfolio doing")
+    assert "$1,000.00" in jarvis.ask("how is my portfolio doing")
 
 
 def test_topic_question_is_not_hijacked_by_self_status(jarvis):
@@ -202,7 +205,7 @@ def test_self_status_question_still_works(jarvis):
 
 def test_symbol_briefing_includes_a_disclaimer(jarvis):
     briefing = jarvis.brief_symbol("AAPL")
-    assert "not a recommendation" in briefing
+    assert jarvis.voice.disclaimer() in briefing
 
 
 def test_symbol_briefing_prices_a_holding(jarvis):
@@ -215,12 +218,12 @@ def test_symbol_briefing_prices_a_holding(jarvis):
 
 def test_unknown_topic_is_admitted_not_confabulated(jarvis):
     answer = jarvis.ask("what is the optimal quantum arbitrage lattice frequency")
-    assert "don't have anything solid" in answer
+    assert answer == jarvis.voice.unknown_topic()
 
 
 def test_no_prior_close_is_stated_plainly(jarvis):
     jarvis.portfolio.record_cash(1_000)
-    assert "prior close" in jarvis.ask("what did I make yesterday")
+    assert "prior close" in jarvis.ask("what did I make yesterday").lower()
 
 
 # --------------------------------------------------------------------- voice
@@ -265,7 +268,7 @@ def test_daytrade_refuses_to_pitch_setups_while_blocked(jarvis):
             symbol, "sell", 10, 101.0, executed_at=when + timedelta(hours=1)
         )
     briefing = jarvis.daytrade_briefing(jarvis.daytrade_scan(["AAPL"]))
-    assert "not going to hand you setups" in briefing
+    assert jarvis.voice.blocked_preamble() in briefing
 
 
 def test_plan_trade_uses_live_equity(jarvis):
@@ -314,3 +317,98 @@ def test_asking_about_pdt_routes_to_risk(jarvis):
 
 def test_review_routes_to_the_journal(jarvis):
     assert "No closed round trips" in jarvis.ask("review my trades")
+
+
+# ----------------------------------------------------------------- watches
+def test_watch_fires_once_when_the_level_is_crossed(jarvis):
+    jarvis.provider.prices = lambda syms: {"XOM": 104.0}  # type: ignore[method-assign]
+    jarvis.add_watch("XOM", 105.0, "below")
+
+    first = jarvis.check_watches()
+    assert len(first) == 1
+    assert "XOM" in first[0]
+    # A watch that repeats every cycle becomes noise, so it fires exactly once.
+    assert jarvis.check_watches() == []
+
+
+def test_watch_stays_quiet_until_the_level_is_reached(jarvis):
+    jarvis.provider.prices = lambda syms: {"XOM": 110.0}  # type: ignore[method-assign]
+    jarvis.add_watch("XOM", 105.0, "below")
+    assert jarvis.check_watches() == []
+    assert len(jarvis.memory.watches.active()) == 1
+
+
+def test_watch_above_direction(jarvis):
+    jarvis.provider.prices = lambda syms: {"NVDA": 130.0}  # type: ignore[method-assign]
+    jarvis.add_watch("NVDA", 125.0, "above")
+    assert len(jarvis.check_watches()) == 1
+
+
+def test_watches_survive_a_restart(jarvis, config):
+    jarvis.add_watch("XOM", 105.0, "below")
+    jarvis.memory.close()
+
+    revived = Jarvis(config, provider=SyntheticProvider())
+    try:
+        assert len(revived.memory.watches.active()) == 1
+        assert revived.memory.watches.active()[0]["symbol"] == "XOM"
+    finally:
+        revived.memory.close()
+
+
+def test_watch_can_be_cancelled(jarvis):
+    jarvis.add_watch("XOM", 105.0, "below")
+    assert jarvis.memory.watches.cancel("XOM") >= 1
+    assert jarvis.memory.watches.active() == []
+
+
+def test_natural_language_sets_a_watch(jarvis):
+    answer = jarvis.ask("keep an eye on XOM below 105")
+    assert "XOM" in answer
+    assert len(jarvis.memory.watches.active()) == 1
+
+
+def test_natural_language_watch_handles_synonyms(jarvis):
+    jarvis.ask("tell me if NVDA hits 200")
+    active = jarvis.memory.watches.active()
+    assert active and active[0]["direction"] == "above"
+
+
+def test_unknown_ticker_is_not_turned_into_a_watch(jarvis):
+    jarvis.ask("keep an eye on ZZZZZ below 105")
+    assert jarvis.memory.watches.active() == []
+
+
+def test_listing_watches_when_empty(jarvis):
+    assert "Nothing on watch" in jarvis.list_watches()
+
+
+def test_price_lookup_failure_does_not_break_watches(jarvis):
+    def boom(syms):
+        raise RuntimeError("network down")
+
+    jarvis.provider.prices = boom  # type: ignore[method-assign]
+    jarvis.add_watch("XOM", 105.0, "below")
+    assert jarvis.check_watches() == []          # no crash
+    assert len(jarvis.memory.watches.active()) == 1  # and not lost
+
+
+# ------------------------------------------------------------ premarket brief
+def test_premarket_brief_leads_with_risk(jarvis):
+    jarvis.portfolio.record_cash(20_000)
+    brief = jarvis.premarket_brief()
+    assert "$20,000.00" in brief
+    # Below $25k the PDT allowance is the first thing that constrains the day.
+    assert "Day trades available today" in brief
+
+
+def test_premarket_brief_lists_active_watches(jarvis):
+    jarvis.provider.prices = lambda syms: {"XOM": 200.0}  # type: ignore[method-assign]
+    jarvis.portfolio.record_cash(50_000)
+    jarvis.add_watch("XOM", 105.0, "below")
+    assert "Still on watch" in jarvis.premarket_brief()
+
+
+def test_premarket_brief_omits_pdt_line_above_the_minimum(jarvis):
+    jarvis.portfolio.record_cash(80_000)
+    assert "Day trades available today" not in jarvis.premarket_brief()

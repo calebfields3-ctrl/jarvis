@@ -521,6 +521,75 @@ class NewsStore:
         return [dict(r) for r in rows]
 
 
+# --------------------------------------------------------------------- watches
+class WatchStore:
+    """Standing instructions: "keep an eye on XOM below 105"."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    def add(
+        self, symbol: str, level: float, direction: str, note: str | None = None
+    ) -> int:
+        if direction not in {"above", "below"}:
+            raise ValueError("direction must be 'above' or 'below'")
+        self.db.execute(
+            "INSERT INTO watches(symbol, level, direction, note) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(symbol, level, direction) DO UPDATE SET "
+            "active = 1, triggered_at = NULL, triggered_price = NULL, "
+            "note = COALESCE(excluded.note, watches.note)",
+            (symbol.upper(), float(level), direction, note),
+        )
+        return int(
+            self.db.scalar(
+                "SELECT id FROM watches WHERE symbol = ? AND level = ? AND direction = ?",
+                (symbol.upper(), float(level), direction),
+            )
+        )
+
+    def active(self) -> list[dict[str, Any]]:
+        rows = self.db.query(
+            "SELECT * FROM watches WHERE active = 1 ORDER BY symbol, level"
+        )
+        return [dict(r) for r in rows]
+
+    def all(self, limit: int = 50) -> list[dict[str, Any]]:
+        rows = self.db.query(
+            "SELECT * FROM watches ORDER BY active DESC, id DESC LIMIT ?", (limit,)
+        )
+        return [dict(r) for r in rows]
+
+    def trigger(self, watch_id: int, price: float) -> None:
+        """Fire once, then deactivate -- a watch that repeats becomes noise."""
+        self.db.execute(
+            "UPDATE watches SET active = 0, triggered_at = datetime('now'), "
+            "triggered_price = ? WHERE id = ?",
+            (float(price), watch_id),
+        )
+
+    def cancel(self, symbol: str) -> int:
+        return self.db.execute(
+            "UPDATE watches SET active = 0 WHERE symbol = ? AND active = 1",
+            (symbol.upper(),),
+        )
+
+    def check(self, prices: dict[str, float]) -> list[tuple[dict[str, Any], float]]:
+        """Return the watches whose level has been crossed, and fire them."""
+        fired: list[tuple[dict[str, Any], float]] = []
+        for watch in self.active():
+            price = prices.get(watch["symbol"])
+            if price is None or price <= 0:
+                continue
+            crossed = (
+                price >= watch["level"] if watch["direction"] == "above"
+                else price <= watch["level"]
+            )
+            if crossed:
+                self.trigger(watch["id"], price)
+                fired.append((watch, price))
+        return fired
+
+
 # -------------------------------------------------------------------- training
 class TrainingStore:
     """Caleb's progress through the day-trading curriculum."""
@@ -577,6 +646,7 @@ class Memory:
         self.signals = SignalStore(self.db)
         self.news = NewsStore(self.db)
         self.training = TrainingStore(self.db)
+        self.watches = WatchStore(self.db)
 
     def close(self) -> None:
         self.db.close()

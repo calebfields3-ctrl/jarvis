@@ -61,6 +61,10 @@ class Config:
     # --- identity -------------------------------------------------------
     owner_name: str = os.environ.get("JARVIS_OWNER", "Caleb")
     wake_phrase: str = os.environ.get("JARVIS_WAKE_PHRASE", "hey jarvis")
+    # 'jarvis' is the butler; 'plain' is flat factual reporting.
+    persona: str = os.environ.get("JARVIS_PERSONA", "jarvis")
+    # How he addresses you. Empty string drops the honorific entirely.
+    address: str | None = os.environ.get("JARVIS_ADDRESS")
 
     # --- storage --------------------------------------------------------
     home: Path = field(default_factory=_home)

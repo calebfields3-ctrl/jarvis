@@ -56,15 +56,21 @@ class BackgroundMonitors:
         urgent = [d for d in report.best(3) if d[2] >= 0.75]
         for symbol, detection, confidence in urgent:
             self.announce(
-                f"Heads up -- {symbol}: {detection.description} "
-                f"({detection.direction}, confidence {confidence:.0%})."
+                self.jarvis.voice.alert(
+                    symbol, detection.description, detection.direction, confidence
+                )
             )
+        # Standing instructions get priority over anything Jarvis noticed himself.
+        for message in self.jarvis.check_watches():
+            self.announce(message)
 
     def _news(self) -> None:
         stats = self.jarvis.news.monitor(self.jarvis.memory.news)
         self.last_news = f"{stats['stored']} new of {stats['seen']} headlines"
         for item in self.jarvis.memory.news.recent(limit=3, min_impact=0.8):
-            self.announce(f"Breaking: {item['headline']} ({item['source']}).")
+            self.announce(
+                self.jarvis.voice.breaking_news(item["headline"], item["source"])
+            )
 
     def _learn(self) -> None:
         result = self.jarvis.learn_cycle()
@@ -99,8 +105,7 @@ class BackgroundMonitors:
 def cmd_run(args, jarvis: Jarvis) -> int:
     channel = VoiceChannel(jarvis.config)
     print(BANNER)
-    print(f"Watching {len(jarvis.universe)} symbols. I/O mode: {channel.mode}.")
-    print(f'Waiting for "{jarvis.config.wake_phrase}"...  (Ctrl-C to stop)\n')
+    print(jarvis.voice.boot(len(jarvis.universe), channel.mode, jarvis.config.wake_phrase))
 
     monitors = BackgroundMonitors(jarvis, announce=channel.say)
     if not args.no_monitors:
@@ -118,7 +123,7 @@ def cmd_run(args, jarvis: Jarvis) -> int:
                     break
                 lowered = heard.lower().strip()
                 if lowered in {"stop", "exit", "quit", "goodbye", "bye", "sleep", "that's all"}:
-                    channel.say("Standing by.")
+                    channel.say(jarvis.voice.dismissed())
                     break
                 if lowered in {"status", "monitor status"}:
                     channel.say(monitors.status())
@@ -131,7 +136,7 @@ def cmd_run(args, jarvis: Jarvis) -> int:
         monitors.stop()
         jarvis.sleep()
         jarvis.mark_close()
-    print("Jarvis offline. Memory saved.")
+    print(jarvis.voice.shutdown())
     return 0
 
 
@@ -150,6 +155,26 @@ def cmd_ask(args, jarvis: Jarvis) -> int:
 def cmd_scan(args, jarvis: Jarvis) -> int:
     symbols = args.symbols or None
     print(jarvis.scan_briefing(jarvis.scan_market(symbols), top=args.top))
+    return 0
+
+
+def cmd_brief(args, jarvis: Jarvis) -> int:
+    print(jarvis.premarket_brief())
+    return 0
+
+
+def cmd_watch(args, jarvis: Jarvis) -> int:
+    if args.cancel:
+        cancelled = jarvis.memory.watches.cancel(args.cancel)
+        print(f"Cancelled {cancelled} watch(es) on {args.cancel.upper()}.")
+        return 0
+    if not args.symbol:
+        print(jarvis.list_watches())
+        return 0
+    if args.direction is None or args.level is None:
+        print("Usage: jarvis watch SYMBOL {above|below} LEVEL")
+        return 1
+    print(jarvis.add_watch(args.symbol, args.level, args.direction, args.note))
     return 0
 
 
@@ -325,6 +350,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="jarvis", description="Jarvis -- self-learning AI trading assistant"
     )
     parser.add_argument("--offline", action="store_true", help="use the synthetic market (no network)")
+    parser.add_argument("--persona", choices=["jarvis", "plain"], help="override his voice")
     parser.add_argument("--verbose", "-v", action="store_true", help="debug logging")
     sub = parser.add_subparsers(dest="command")
 
@@ -342,6 +368,16 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("symbols", nargs="*", help="limit to these symbols")
     scan.add_argument("--top", type=int, default=8)
     scan.set_defaults(func=cmd_scan)
+
+    sub.add_parser("brief", help="pre-market briefing").set_defaults(func=cmd_brief)
+
+    watch = sub.add_parser("watch", help="standing alert on a price level")
+    watch.add_argument("symbol", nargs="?")
+    watch.add_argument("direction", nargs="?", choices=["above", "below"])
+    watch.add_argument("level", nargs="?", type=float)
+    watch.add_argument("--note")
+    watch.add_argument("--cancel", metavar="SYMBOL", help="cancel watches on a symbol")
+    watch.set_defaults(func=cmd_watch)
 
     day = sub.add_parser("daytrade", help="intraday setup scan with sizing and risk checks")
     day.add_argument("symbols", nargs="*")
@@ -441,7 +477,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
-    jarvis = Jarvis(get_config(), offline=args.offline)
+    config = get_config()
+    if args.persona:
+        config.persona = args.persona
+    jarvis = Jarvis(config, offline=args.offline)
     try:
         return args.func(args, jarvis)
     finally:

@@ -14,9 +14,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-# v2 added training_attempts. Every change so far has been purely additive, so
+# v3 added watches; v2 added training_attempts. Every change so far has been purely additive, so
 # `CREATE TABLE IF NOT EXISTS` upgrades an existing database in place.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 -- Owner profile: name, preferences, anything Jarvis should remember about you.
@@ -193,6 +193,22 @@ CREATE TABLE IF NOT EXISTS training_attempts (
     attempted_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_training_module ON training_attempts(module_key);
+
+-- Standing instructions: "keep an eye on XOM below 105". Jarvis checks these
+-- on every scan cycle and speaks up once when one triggers.
+CREATE TABLE IF NOT EXISTS watches (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol       TEXT NOT NULL,
+    level        REAL NOT NULL,
+    direction    TEXT NOT NULL CHECK (direction IN ('above', 'below')),
+    note         TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    triggered_at TEXT,
+    triggered_price REAL,
+    active       INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (symbol, level, direction)
+);
+CREATE INDEX IF NOT EXISTS idx_watches_active ON watches(active);
 
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,

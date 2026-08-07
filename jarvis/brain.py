@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
@@ -34,6 +35,7 @@ from .market.provider import SyntheticProvider, YahooProvider, build_provider
 from .market.session import SessionClock
 from .market.tradingview import TradingViewScanner, load_universe
 from .memory.store import Memory, utcnow
+from .persona import GreetingContext, Persona, build_persona
 from .portfolio.risk import RiskManager, RiskProfile
 from .portfolio.tracker import PortfolioSnapshot, PortfolioTracker
 from .safety.url_safety import URLSafetyChecker
@@ -81,9 +83,13 @@ class Jarvis:
         provider=None,
         memory: Memory | None = None,
         offline: bool = False,
+        persona: Persona | None = None,
     ) -> None:
         self.config = config or get_config()
         self.memory = memory or Memory(self.config.db_path)
+        self.voice = persona or build_persona(
+            self.config.persona, address=self.config.address
+        )
         self.provider = provider or (
             SyntheticProvider() if offline else build_provider(prefer_live=True)
         )
@@ -148,16 +154,27 @@ class Jarvis:
         """The 'hey Jarvis' response: greet Caleb, then brief him."""
         previous = self.memory.sessions.last_session()
         self.session_id = self.memory.sessions.start(channel=channel)
-        name = self.memory.profile.name
 
-        lines = [f"{self._time_greeting()}, {name}. Jarvis online."]
+        level, score = self.memory.knowledge.expertise_level()
+        stats = self.memory.knowledge.stats()
+        ctx = GreetingContext(
+            name=self.memory.profile.name,
+            hour=datetime.now().hour,
+            first_session=not (previous and previous.get("started_at")),
+            gap=(
+                self._humanise_gap(previous["started_at"])
+                if previous and previous.get("started_at") else None
+            ),
+            expertise_label=level,
+            expertise_score=score,
+            lessons=stats["total"],
+            graded=stats["graded_predictions"],
+        )
 
-        if previous and previous.get("started_at"):
-            gap = self._humanise_gap(previous["started_at"])
-            if gap:
-                lines.append(f"It's been {gap} since we last spoke.")
-        else:
-            lines.append("This is our first session -- I'll remember it from here.")
+        lines = [self.voice.greeting_open(ctx)]
+        opener = self.voice.greeting_gap(ctx)
+        if opener:
+            lines.append(opener)
 
         lines.append("")
         lines.extend(self.portfolio_summary().splitlines())
@@ -165,18 +182,18 @@ class Jarvis:
         headlines = self.memory.news.recent(limit=3, min_impact=0.6)
         if headlines:
             lines.append("")
-            lines.append("Overnight headlines worth your attention:")
+            lines.append(self.voice.news_header())
             for item in headlines:
                 tickers = f" [{item['tickers']}]" if item["tickers"] else ""
                 lines.append(f"  - {item['headline']} ({item['source']}){tickers}")
 
-        level, score = self.memory.knowledge.expertise_level()
-        stats = self.memory.knowledge.stats()
+        triggered = self.check_watches()
+        if triggered:
+            lines.append("")
+            lines.extend(triggered)
+
         lines.append("")
-        lines.append(
-            f"My read on markets is {level} right now (score {score:.2f}) -- "
-            f"{stats['total']} lessons held, {stats['graded_predictions']} predictions graded."
-        )
+        lines.append(self.voice.greeting_expertise(ctx))
 
         greeting = "\n".join(lines)
         self.memory.sessions.record(self.session_id, "jarvis", greeting)
@@ -191,54 +208,42 @@ class Jarvis:
     def portfolio_summary(self) -> str:
         snap = self.snapshot()
         if not snap.positions and snap.cash == 0:
-            return (
-                "Your portfolio is empty. Add a deposit and some trades and I'll "
-                "start tracking performance from there:\n"
-                "  jarvis deposit 10000\n"
-                "  jarvis buy AAPL 10 185.50"
-            )
+            return self.voice.portfolio_empty()
 
-        lines = [f"Portfolio: ${snap.total_value:,.2f} across {len(snap.positions)} positions."]
+        lines = [self.voice.portfolio_headline(snap.total_value, len(snap.positions))]
 
         if snap.day_pnl is None:
-            lines.append(
-                "I don't have yesterday's close on record yet, so no day-over-day "
-                "number -- I'll mark today's close and have it for you tomorrow."
-            )
+            lines.append(self.voice.no_prior_close())
         else:
-            direction = "up" if snap.day_pnl >= 0 else "down"
-            pct = f" ({snap.day_pnl_pct:+.2f}%)" if snap.day_pnl_pct is not None else ""
             lines.append(
-                f"Since the {snap.prior_date} close you're {direction} "
-                f"${abs(snap.day_pnl):,.2f}{pct}."
+                self.voice.day_pnl(snap.day_pnl, snap.day_pnl_pct, snap.prior_date)
             )
 
         best, worst = snap.best(), snap.worst()
         if best is not None and best.quantity:
             lines.append(
-                f"Best position: {best.symbol} {best.unrealized_pct:+.1f}% "
-                f"(${best.unrealized_pnl:+,.2f} open)."
+                self.voice.best_position(
+                    best.symbol, best.unrealized_pct, best.unrealized_pnl
+                )
             )
         if worst is not None and worst is not best:
             lines.append(
-                f"Weakest: {worst.symbol} {worst.unrealized_pct:+.1f}% "
-                f"(${worst.unrealized_pnl:+,.2f} open)."
+                self.voice.worst_position(
+                    worst.symbol, worst.unrealized_pct, worst.unrealized_pnl
+                )
             )
 
         perf = self.portfolio.performance(30)
         if perf.get("change") is not None:
             lines.append(
-                f"Last {perf['days']} sessions on record: ${perf['change']:+,.2f} "
-                f"({perf['change_pct']:+.2f}%), {perf['win_days']} up days vs "
-                f"{perf['loss_days']} down."
+                self.voice.performance(
+                    perf["days"], perf["change"], perf["change_pct"],
+                    perf["win_days"], perf["loss_days"],
+                )
             )
 
         if snap.stale_prices:
-            shown = ", ".join(snap.stale_prices[:5])
-            lines.append(
-                f"Heads up: I couldn't get live prices for {shown} -- those are "
-                "valued at cost, so the total is approximate."
-            )
+            lines.append(self.voice.stale_prices(snap.stale_prices[:5]))
         return "\n".join(lines)
 
     def snapshot(self) -> PortfolioSnapshot:
@@ -319,14 +324,14 @@ class Jarvis:
     def scan_briefing(self, report: ScanReport | None = None, *, top: int = 6) -> str:
         report = report or self.scan_market()
         lines = [
-            f"Watched {report.symbols_watched} charts; "
-            f"{report.symbols_with_data} returned data; "
-            f"{len(report.detections)} setups fired."
+            self.voice.scan_summary(
+                report.symbols_watched, report.symbols_with_data, len(report.detections)
+            )
         ]
         best = report.best(top)
         if best:
             lines.append("")
-            lines.append("Highest-conviction setups:")
+            lines.append(self.voice.setups_header())
             for symbol, detection, confidence in best:
                 lesson = self.memory.knowledge.lesson_for_pattern(detection.pattern_key)
                 track = ""
@@ -336,7 +341,7 @@ class Jarvis:
                         rate = lesson.support / samples * 100
                         track = f" [{rate:.0f}% over {samples} graded]"
                     else:
-                        track = " [untested -- hypothesis]"
+                        track = f" [{self.voice.untested_marker()}]"
                 lines.append(
                     f"  {symbol:<6} {detection.direction.upper():<5} "
                     f"{detection.pattern_key:<24} conf {confidence:.2f}{track}"
@@ -350,6 +355,117 @@ class Jarvis:
             lines.append(f"Unusual volume: {vols}")
         for note in report.notes:
             lines.append(f"Note: {note}")
+        return "\n".join(lines)
+
+    # -------------------------------------------------------------- watches
+    def add_watch(
+        self, symbol: str, level: float, direction: str, note: str | None = None
+    ) -> str:
+        """Standing instruction: tell me when this crosses that level."""
+        symbol = symbol.upper()
+        self.memory.watches.add(symbol, level, direction, note)
+        return self.voice.watch_added(symbol, level, direction)
+
+    def check_watches(self) -> list[str]:
+        """Fire any watch whose level has been crossed. Each fires once."""
+        active = self.memory.watches.active()
+        if not active:
+            return []
+        symbols = sorted({w["symbol"] for w in active})
+        try:
+            prices = dict(self.provider.prices(symbols))
+        except Exception as exc:
+            log.debug("watch price lookup failed: %s", exc)
+            return []
+        return [
+            self.voice.watch_triggered(
+                watch["symbol"], watch["level"], watch["direction"], price
+            )
+            for watch, price in self.memory.watches.check(prices)
+        ]
+
+    def list_watches(self) -> str:
+        watches = self.memory.watches.all()
+        if not watches:
+            return "Nothing on watch. Add one with `jarvis watch XOM below 105`."
+        lines = []
+        for watch in watches:
+            if watch["active"]:
+                lines.append(
+                    f"  [watching] {watch['symbol']:<6} {watch['direction']:<5} "
+                    f"{watch['level']:.2f}"
+                    + (f"  -- {watch['note']}" if watch["note"] else "")
+                )
+            else:
+                fired = (
+                    f" at {watch['triggered_price']:.2f} on {watch['triggered_at'][:10]}"
+                    if watch["triggered_at"] else " (cancelled)"
+                )
+                lines.append(
+                    f"  [done]     {watch['symbol']:<6} {watch['direction']:<5} "
+                    f"{watch['level']:.2f}{fired}"
+                )
+        return "\n".join(lines)
+
+    # -------------------------------------------------------- premarket brief
+    def premarket_brief(self, *, clock: SessionClock | None = None) -> str:
+        """Everything worth knowing before the bell, in one read.
+
+        Deliberately ordered by what can hurt you first: your open risk, then
+        the news that could reprice it, then what you asked to be told, and
+        only then the opportunities.
+        """
+        clock = clock or SessionClock.live()
+        lines = [clock.describe(), ""]
+
+        snap = self.snapshot()
+        lines.extend(self.portfolio_summary().splitlines())
+
+        status = self.risk.status(snap.total_value)
+        remaining = status.day_trades_remaining
+        if remaining is not None:
+            lines.append("")
+            lines.append(
+                f"Day trades available today: {remaining} of 3 "
+                f"(equity {self.voice.money(status.equity)}, below the "
+                "$25,000 PDT minimum)."
+            )
+        if not status.can_trade:
+            lines.append("")
+            lines.append(status.describe())
+
+        headlines = self.memory.news.recent(limit=5, min_impact=0.5)
+        if headlines:
+            lines.append("")
+            lines.append(self.voice.news_header())
+            for item in headlines:
+                tickers = f" [{item['tickers']}]" if item["tickers"] else ""
+                lines.append(f"  - {item['headline']} ({item['source']}){tickers}")
+
+        held = {p.symbol for p in snap.positions}
+        exposed = [
+            item for item in self.memory.news.recent(limit=40, min_impact=0.3)
+            if held & {t for t in (item["tickers"] or "").split(",") if t}
+        ][:3]
+        if exposed:
+            lines.append("")
+            lines.append("News touching positions you actually hold:")
+            for item in exposed:
+                lines.append(f"  - {item['headline']} [{item['tickers']}]")
+
+        watching = self.memory.watches.active()
+        if watching:
+            lines.append("")
+            lines.append("Still on watch:")
+            for watch in watching:
+                lines.append(
+                    f"  {watch['symbol']} {watch['direction']} {watch['level']:.2f}"
+                )
+
+        triggered = self.check_watches()
+        if triggered:
+            lines.append("")
+            lines.extend(triggered)
         return "\n".join(lines)
 
     # ----------------------------------------------------------- day trading
@@ -431,10 +547,7 @@ class Jarvis:
             lines.append(report.status.describe())
             lines.append("")
             if not report.status.can_trade:
-                lines.append(
-                    "I'm not going to hand you setups while you're blocked. "
-                    "Come back tomorrow."
-                )
+                lines.append(self.voice.blocked_preamble())
                 return "\n".join(lines)
 
         lines.append(
@@ -443,13 +556,13 @@ class Jarvis:
         )
         best = report.best(top)
         if not best:
-            lines.append("Nothing meets the bar right now. No trade is a position.")
+            lines.append(self.voice.no_setups())
         for symbol, signal, confidence in best:
             lesson = self.memory.knowledge.lesson_for_pattern(signal.pattern_key)
             samples = (lesson.support + lesson.refute) if lesson else 0
             track = (
                 f"{lesson.support / samples * 100:.0f}% over {samples} graded"
-                if lesson and samples else "untested"
+                if lesson and samples else self.voice.untested_marker()
             )
             plan = self.risk.plan_trade(
                 symbol, signal.direction, signal.entry, signal.stop, signal.target,
@@ -684,10 +797,10 @@ class Jarvis:
             name = name.strip().rstrip(".")
             if name:
                 self.memory.profile.name = name
-                return f"Got it -- {name} from now on."
+                return self.voice.name_confirmed(name)
 
         if any(w in lowered for w in ("my name", "who am i", "call me")):
-            return f"You're {self.memory.profile.name}. I don't forget that."
+            return self.voice.name_recalled(self.memory.profile.name)
 
         if any(w in lowered for w in ("portfolio", "how am i doing", "p&l", "pnl", "p/l", "positions")):
             return self.portfolio_summary()
@@ -728,6 +841,16 @@ class Jarvis:
             if any(w in lowered for w in ("teach", "learn", "train", "how do i", "show me how")):
                 return self.teach()
             return self.daytrade_briefing()
+
+        watch_request = self._parse_watch_request(q)
+        if watch_request:
+            return self.add_watch(*watch_request)
+
+        if any(w in lowered for w in ("what are you watching", "my watches", "on watch")):
+            return self.list_watches()
+
+        if any(w in lowered for w in ("brief me", "pre-market", "premarket", "before the open")):
+            return self.premarket_brief()
 
         if any(w in lowered for w in ("can i trade", "am i allowed", "pdt", "pattern day")):
             return self.trading_status().describe()
@@ -843,10 +966,7 @@ class Jarvis:
             lines.append("  Recent news:")
             lines.extend(f"    - {n['headline']} ({n['source']})" for n in related)
 
-        lines.append(
-            "  This is analysis, not a recommendation -- position sizing and the "
-            "decision are yours."
-        )
+        lines.append(f"  {self.voice.disclaimer()}")
         return "\n".join(lines)
 
     # Question scaffolding that matches almost every lesson and so tells us
@@ -870,10 +990,7 @@ class Jarvis:
         """Fall back to what Jarvis has actually learned about the topic asked."""
         terms = self._content_terms(q)
         if not terms:
-            return (
-                "Ask me something more specific and I'll tell you what I've learned "
-                "about it -- a concept, a pattern, a ticker, or your portfolio."
-            )
+            return self.voice.too_vague()
         scored: list[tuple[int, Any]] = []
         for lesson in self.memory.knowledge.lessons(limit=400):
             # The pattern key carries the name traders actually use ("breakout"),
@@ -884,13 +1001,9 @@ class Jarvis:
             if overlap:
                 scored.append((overlap, lesson))
         if not scored:
-            return (
-                "I don't have anything solid on that yet. I'm still building expertise -- "
-                "ask me about your portfolio, a ticker on the watchlist, current setups, "
-                "or what I've learned so far."
-            )
+            return self.voice.unknown_topic()
         scored.sort(key=lambda pair: (pair[0], pair[1].confidence), reverse=True)
-        lines = ["Here's what I've got on that:"]
+        lines = [self.voice.knowledge_header()]
         for _, lesson in scored[:4]:
             marker = {
                 "foundation": "basics", "expertise": "proven",
@@ -905,6 +1018,26 @@ class Jarvis:
                     f"over {samples} graded calls"
                 )
         return "\n".join(lines)
+
+    _WATCH_RX = re.compile(
+        r"(?:watch|keep an eye on|alert me (?:on|about)|tell me (?:if|when))\s+"
+        r"\$?([A-Za-z][A-Za-z.\-]{0,5})\b"
+        r".{0,30}?\b(above|below|over|under|hits?|reaches|drops? to|falls? to)\b\s*"
+        r"\$?(\d+(?:\.\d+)?)",
+        re.I,
+    )
+
+    def _parse_watch_request(self, q: str) -> tuple[str, float, str] | None:
+        """Pull "keep an eye on XOM below 105" out of natural speech."""
+        match = self._WATCH_RX.search(q)
+        if not match:
+            return None
+        symbol, word, level = match.group(1).upper(), match.group(2).lower(), match.group(3)
+        if symbol not in {s.upper() for s in self.universe}:
+            return None
+        direction = "below" if word in {"below", "under", "drops to", "drop to",
+                                        "falls to", "fall to"} else "above"
+        return symbol, float(level), direction
 
     @classmethod
     def _content_terms(cls, q: str) -> set[str]:
