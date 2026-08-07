@@ -96,6 +96,15 @@ class Persona:
             f"{ctx.graded} predictions graded."
         )
 
+    def summoned(self, name: str) -> str:
+        """The one line he says the instant the window appears.
+
+        Spoken aloud before anything has been looked up, so it has to be
+        short and it has to be instant -- a pause here reads as the wake word
+        not working, and Caleb says it again.
+        """
+        return f"Yes, {name}?"
+
     def dismissed(self) -> str:
         return "Standing by."
 
@@ -290,6 +299,14 @@ class JarvisPersona(Persona):
             f"{ctx.graded:,} predictions graded, which puts me at "
             f"{ctx.expertise_label} ({ctx.expertise_score:.2f})."
         )
+
+    def summoned(self, name: str) -> str:
+        return self._pick((
+            f"Hello{self._sir}. What can I do for you?",
+            f"{self._Sir}. How can I help?",
+            f"Yes{self._sir}?",
+            f"At your service{self._sir}.",
+        ))
 
     def dismissed(self) -> str:
         return self._pick((

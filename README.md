@@ -11,10 +11,20 @@ sources — then grades himself against what the market actually did.
 $ jarvis
 ```
 
-A dark window, a glowing ring, and a wake word. The ring is the interface: it
-brightens and speeds up when he's listening, ticks over while he works, pulses
-when he speaks, and turns amber when he needs your say-so before doing
-something. Type in the box at the bottom if you'd rather not talk.
+Nothing appears. He's listening.
+
+Say **"hey Jarvis"** and the window comes up in front of whatever you're doing,
+a glowing ring in the middle, and he answers out loud. The first summons of each
+day also brings the morning rundown unasked — portfolio, overnight news,
+standing watches, whether you're clear to day trade. Every summons after that is
+one line, because a briefing you hear twenty times a day stops being a briefing.
+
+Say "goodbye" and it tucks itself away; it also goes on its own after a minute
+of quiet. He keeps listening either way.
+
+The ring is the interface: brighter and faster when he's listening, ticking over
+while he works, pulsing when he speaks, amber when he needs your say-so. Type in
+the box at the bottom if you'd rather not talk.
 
 Behind it, Claude Opus 5 holds seventeen tools — a shell, the filesystem, a
 browser, and everything below. Every one of them goes through a permission

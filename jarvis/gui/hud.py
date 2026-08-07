@@ -206,9 +206,14 @@ class HUD:
         title: str = "J.A.R.V.I.S.",
         on_submit: Callable[[str], None] | None = None,
         on_close: Callable[[], None] | None = None,
+        start_hidden: bool = False,
     ) -> None:
         self.on_submit = on_submit
         self.on_close = on_close
+        # Hidden until summoned, when there's a wake word to summon him with.
+        # Without one, a window that never appears is just a broken program.
+        self.visible = not start_hidden
+        self._start_hidden = start_hidden
         self.state = ReactorState()
         self._events: queue.Queue = queue.Queue()
         self._closed = threading.Event()
@@ -232,6 +237,14 @@ class HUD:
     def tool_call(self, call) -> None:
         """Show a tool call in the ticker. Takes a :class:`ToolCall`."""
         self._events.put(("tool", call))
+
+    def summon(self) -> None:
+        """Bring the window up in front of whatever Caleb is looking at."""
+        self._events.put(("summon", None))
+
+    def dismiss(self) -> None:
+        """Put it away again, still listening."""
+        self._events.put(("dismiss", None))
 
     def close(self) -> None:
         self._events.put(("close", None))
@@ -298,6 +311,9 @@ class HUD:
         self._entry.bind("<Return>", self._handle_submit)
         self._entry.focus_set()
 
+        if self._start_hidden:
+            self._root.withdraw()
+
         self._root.after(self.FRAME_MS, self._frame)
         self._root.mainloop()
 
@@ -306,10 +322,14 @@ class HUD:
         if self._root is None:
             return
         self._drain()
-        self.state.tick(self.FRAME_MS / 1000.0)
-        self._draw()
+        if self.visible:
+            # No point animating a withdrawn window. While he's waiting to be
+            # summoned this loop should cost nothing -- it may sit there all
+            # day on a laptop battery.
+            self.state.tick(self.FRAME_MS / 1000.0)
+            self._draw()
         if not self._closed.is_set():
-            self._root.after(self.FRAME_MS, self._frame)
+            self._root.after(self.FRAME_MS if self.visible else 250, self._frame)
 
     def _drain(self) -> None:
         """Apply everything queued since the last frame, on this thread."""
@@ -342,6 +362,23 @@ class HUD:
             mark = "·" if call.ok else "×"
             self._append(f"{mark} {call.name}  {call.summary}", tag=tag, prefix="   ")
             self.state.excite(0.35)
+        elif kind == "summon":
+            self.visible = True
+            if self._root is not None:
+                self._root.deiconify()
+                # lift() alone loses to a full-screen Chrome window, which is
+                # exactly what will be in front of it. The topmost flag is set
+                # and immediately cleared so it comes forward once rather than
+                # sitting above everything for the rest of the session.
+                self._root.attributes("-topmost", True)
+                self._root.lift()
+                self._root.after(200, lambda: self._root.attributes("-topmost", False))
+                if self._entry is not None:
+                    self._entry.focus_force()
+        elif kind == "dismiss":
+            self.visible = False
+            if self._root is not None:
+                self._root.withdraw()
         elif kind == "ask":
             action, decision, answer = payload
             answer.put(self._prompt(action, decision))

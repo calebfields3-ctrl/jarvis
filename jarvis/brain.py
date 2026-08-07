@@ -152,24 +152,8 @@ class Jarvis:
     # ---------------------------------------------------------------- wake
     def wake(self, *, channel: str = "text") -> str:
         """The 'hey Jarvis' response: greet Caleb, then brief him."""
-        previous = self.memory.sessions.last_session()
+        ctx = self._greeting_context()
         self.session_id = self.memory.sessions.start(channel=channel)
-
-        level, score = self.memory.knowledge.expertise_level()
-        stats = self.memory.knowledge.stats()
-        ctx = GreetingContext(
-            name=self.memory.profile.name,
-            hour=datetime.now().hour,
-            first_session=not (previous and previous.get("started_at")),
-            gap=(
-                self._humanise_gap(previous["started_at"])
-                if previous and previous.get("started_at") else None
-            ),
-            expertise_label=level,
-            expertise_score=score,
-            lessons=stats["total"],
-            graded=stats["graded_predictions"],
-        )
 
         lines = [self.voice.greeting_open(ctx)]
         opener = self.voice.greeting_gap(ctx)
@@ -198,6 +182,71 @@ class Jarvis:
         greeting = "\n".join(lines)
         self.memory.sessions.record(self.session_id, "jarvis", greeting)
         return greeting
+
+    # ------------------------------------------------------ summoned by voice
+    def first_time_today(self) -> bool:
+        """Whether this is the first time Caleb has summoned him today.
+
+        Uses the market's day, not UTC's. Summoning him at 8pm Eastern and
+        again at 1am should be one day and two greetings, not the reverse.
+        """
+        return self.memory.profile.get("last_briefing_day") != self._market_day()
+
+    def summoned(self) -> str:
+        """What he says when the wake word pulls the window up.
+
+        The first summon of the day gets the full briefing -- portfolio, what
+        moved overnight, what he's watching, whether Caleb can trade. Every
+        summon after that gets one line, because repeating the whole briefing
+        every time someone says his name is how a useful thing becomes noise.
+        """
+        # Being summoned by voice is how a session begins now -- `wake` is
+        # never called on that path, and without this nothing he says all day
+        # would be recorded.
+        if self.session_id is None:
+            self.session_id = self.memory.sessions.start(channel="voice")
+
+        name = self.memory.profile.name
+        if not self.first_time_today():
+            line = self.voice.summoned(name)
+            self.memory.sessions.record(self.session_id, "jarvis", line)
+            return line
+
+        self.memory.profile.set("last_briefing_day", self._market_day())
+        lines = [self.voice.greeting_open(self._greeting_context()), ""]
+        try:
+            lines.extend(self.premarket_brief().splitlines())
+        except Exception as exc:
+            log.warning("the daily briefing failed: %s", exc)
+            lines.extend(self.portfolio_summary().splitlines())
+
+        briefing = "\n".join(lines)
+        self.memory.sessions.record(self.session_id, "jarvis", briefing)
+        return briefing
+
+    @staticmethod
+    def _market_day() -> str:
+        from .portfolio.tracker import market_now
+
+        return market_now().date().isoformat()
+
+    def _greeting_context(self) -> GreetingContext:
+        previous = self.memory.sessions.last_session()
+        level, score = self.memory.knowledge.expertise_level()
+        stats = self.memory.knowledge.stats()
+        return GreetingContext(
+            name=self.memory.profile.name,
+            hour=datetime.now().hour,
+            first_session=not (previous and previous.get("started_at")),
+            gap=(
+                self._humanise_gap(previous["started_at"])
+                if previous and previous.get("started_at") else None
+            ),
+            expertise_label=level,
+            expertise_score=score,
+            lessons=stats["total"],
+            graded=stats["graded_predictions"],
+        )
 
     def sleep(self, summary: str | None = None) -> None:
         if self.session_id is not None:

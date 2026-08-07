@@ -127,8 +127,9 @@ If anything goes wrong it stops and tells you exactly what to do. **Running
 4. Paste it when `./setup.sh` asks. (Pasting into the Terminal shows nothing —
    that's normal, it's hidden on purpose. Just press Enter.)
 
-Expect a few dollars a month for normal use. Every reply tells you nothing
-about cost, but `jarvis status` shows what the session has spent.
+Expect a few dollars a month for normal use. The console at
+**console.anthropic.com** shows exactly what you've spent, and you can cap it
+there so it can never surprise you.
 
 ---
 
@@ -138,11 +139,18 @@ about cost, but `jarvis status` shows what the session has spent.
 jarvis
 ```
 
-That's the whole command. A dark window opens with a glowing ring in the middle
-— that's him.
+That's the whole command. Nothing appears — he's listening in the background.
 
-**Say "hey Jarvis" out loud.** The ring brightens and speeds up when he's
-listening. Then just talk:
+**Now say "hey Jarvis" out loud.** The window pops up in front of whatever
+you're doing, a glowing ring in the middle, and he answers: *"Hello, sir. What
+can I do for you?"*
+
+**The first time each day** he also gives you the morning rundown without being
+asked — your portfolio, what moved overnight, anything he's watching, and
+whether you're clear to day trade. After that he just says hello, because
+hearing the whole briefing every time you say his name gets old fast.
+
+Then just talk:
 
 ```
 how's my portfolio
@@ -155,12 +163,16 @@ can I trade today
 
 You can also type in the box at the bottom if you'd rather not talk.
 
+When you're done, say **"goodbye"** (or "thanks", or "never mind") and the
+window tucks itself away. It also goes away on its own after about a minute of
+quiet. He's still listening either way — say "hey Jarvis" and he's back.
+
 **When he wants to do something that could break things** — delete a file,
 install something — the ring turns amber and a box asks you first. Nothing
 destructive happens without you clicking yes. A few things he won't do at all,
 even if you say yes, and he'll tell you which.
 
-To shut him down, close the window.
+To shut him down completely, close the window.
 
 > **If no window appears** and it stays in the terminal, the toolkit is
 > missing. Run `sudo apt install -y python3-tk` and start him again.

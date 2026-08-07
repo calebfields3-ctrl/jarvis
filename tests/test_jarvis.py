@@ -412,3 +412,72 @@ def test_premarket_brief_lists_active_watches(jarvis):
 def test_premarket_brief_omits_pdt_line_above_the_minimum(jarvis):
     jarvis.portfolio.record_cash(80_000)
     assert "Day trades available today" not in jarvis.premarket_brief()
+
+
+# ---------------------------------------------------- summoned by the wake word
+
+
+def test_the_first_summon_of_the_day_is_the_first_summon(jarvis):
+    assert jarvis.first_time_today()
+
+
+def test_being_summoned_marks_the_day_done(jarvis):
+    jarvis.summoned()
+    assert not jarvis.first_time_today()
+
+
+def test_the_first_summon_brings_the_whole_briefing(jarvis):
+    """Portfolio, and whatever else the pre-market brief turns up."""
+    briefing = jarvis.summoned()
+    assert len(briefing.splitlines()) > 3
+    assert "Caleb" in briefing
+
+
+def test_later_summons_are_a_single_line(jarvis):
+    """Repeating the briefing every time someone says his name is noise."""
+    jarvis.summoned()
+    again = jarvis.summoned()
+    assert len(again.splitlines()) == 1
+
+
+def test_the_day_rolls_over_on_the_market_clock_not_utc(jarvis):
+    """8pm Eastern and 1am the same night are one day, and UTC disagrees."""
+    from jarvis.portfolio.tracker import market_now
+
+    jarvis.summoned()
+    stored = jarvis.memory.profile.get("last_briefing_day")
+    assert stored == market_now().date().isoformat()
+
+
+def test_a_failing_briefing_still_greets_him(jarvis, monkeypatch):
+    """A dead network must not mean silence when he says the wake word."""
+    def explode(*args, **kwargs):
+        raise RuntimeError("no market data")
+
+    monkeypatch.setattr(jarvis, "premarket_brief", explode)
+    briefing = jarvis.summoned()
+    assert "Caleb" in briefing
+    assert briefing.strip()
+
+
+def test_every_persona_answers_a_summons(jarvis):
+    from jarvis.persona import PERSONAS, build_persona
+
+    for key in PERSONAS:
+        line = build_persona(key).summoned("Caleb")
+        assert line.strip()
+        assert len(line.splitlines()) == 1, "the summons line is spoken, not read"
+
+
+def test_being_summoned_starts_a_session_so_the_day_is_recorded(jarvis):
+    """`wake` never runs on the voice path, so this is where a session begins."""
+    assert jarvis.session_id is None
+    jarvis.summoned()
+    assert jarvis.session_id is not None
+
+
+def test_repeated_summons_stay_in_one_session(jarvis):
+    jarvis.summoned()
+    first = jarvis.session_id
+    jarvis.summoned()
+    assert jarvis.session_id == first

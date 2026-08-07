@@ -31,6 +31,16 @@ from jarvis.voice.daemon import WakeDaemon
 
 log = logging.getLogger(__name__)
 
+# How long the window stays up after he's finished answering. Long enough to
+# read what he said and ask a follow-up without saying his name again.
+IDLE_DISMISS_SECONDS = 45.0
+
+DISMISSALS = {
+    "goodbye", "bye", "that's all", "thats all", "thanks", "thank you",
+    "nothing", "never mind", "nevermind", "dismissed", "sleep", "go away",
+    "stop", "exit", "quit",
+}
+
 
 class JarvisApp:
     """Assembles Jarvis and runs him until Caleb closes the window."""
@@ -70,7 +80,13 @@ class JarvisApp:
     def _build(self) -> None:
         problem = hud_problem() if self.use_hud else "not asked for"
         if problem is None:
-            self.hud = HUD(on_submit=self._handle, on_close=self._shutdown)
+            self.hud = HUD(
+                on_submit=self._handle,
+                on_close=self._shutdown,
+                # Only hide it if there will be a wake word to bring it back.
+                # A window that never appears is just a broken program.
+                start_hidden=self.use_voice,
+            )
         elif self.use_hud:
             self._note(f"Running in the terminal -- no window available.\n{problem}")
 
@@ -113,22 +129,54 @@ class JarvisApp:
 
     # --------------------------------------------------------------- events
     def _woken(self) -> None:
-        """He said the words."""
+        """He said the words. Window up, greeting out, then listen."""
+        self._cancel_dismissal()
+
+        # The window and the greeting come first, before anything is looked
+        # up. Say "hey Jarvis" and wait three seconds for a database query and
+        # it reads as the wake word not working, so you say it again.
         if self.hud is not None:
+            self.hud.summon()
             self.hud.set_mode(Mode.LISTENING)
             self.hud.status("listening")
+
+        greeting = self.jarvis.voice.summoned(self.jarvis.memory.profile.name)
+        self._speak(greeting)
+
+        # The briefing is the slow part, so it goes out after the greeting
+        # rather than instead of it.
+        if self.jarvis.first_time_today():
+            self._speak(self.jarvis.summoned())
+
         heard = self.voice.listen(timeout=12.0) if self.voice else None
         if not heard:
-            if self.hud is not None:
-                self.hud.set_mode(Mode.IDLE)
-                self.hud.status("standing by")
+            self._idle()
             return
         if self.hud is not None:
             self.hud.say(heard, who="caleb")
         self._handle(heard)
 
+    def _speak(self, text: str) -> None:
+        """Put a line in front of Caleb, in whatever channels exist."""
+        if self.hud is not None:
+            self.hud.say(text)
+        else:
+            print(f"\n{text}\n")
+        if self.voice is not None:
+            try:
+                self.voice.say(text)
+            except Exception:
+                log.debug("speaking failed", exc_info=True)
+
     def _handle(self, text: str) -> None:
         """One exchange, from whichever direction it arrived."""
+        self._cancel_dismissal()
+
+        if text.strip().lower() in DISMISSALS:
+            self._speak(self.jarvis.voice.dismissed())
+            self._idle(delay=0.0)
+            return
+
         if self.hud is not None:
             self.hud.set_mode(Mode.THINKING)
             self.hud.status("working")
@@ -141,17 +189,37 @@ class JarvisApp:
         if self.hud is not None:
             self.hud.set_mode(Mode.SPEAKING)
             self.hud.status("speaking")
-            self.hud.say(answer)
-        else:
-            print(f"\n{answer}\n")
-        if self.voice is not None:
-            try:
-                self.voice.say(answer)
-            except Exception:
-                log.debug("speaking failed", exc_info=True)
+        self._speak(answer)
+        self._idle()
+
+    # ----------------------------------------------------------- dismissal
+    def _idle(self, delay: float | None = None) -> None:
+        """Back to standing by, and out of the way once he's not needed.
+
+        Only when there's a wake word. Without one, hiding the window would
+        leave Caleb with no way to get it back.
+        """
         if self.hud is not None:
             self.hud.set_mode(Mode.IDLE)
             self.hud.status("standing by")
+        if self.hud is None or self.voice is None:
+            return
+
+        wait = IDLE_DISMISS_SECONDS if delay is None else delay
+        timer = threading.Timer(wait, self._dismiss)
+        timer.daemon = True
+        self._dismiss_timer = timer
+        timer.start()
+
+    def _dismiss(self) -> None:
+        if self.hud is not None:
+            self.hud.dismiss()
+
+    def _cancel_dismissal(self) -> None:
+        timer = getattr(self, "_dismiss_timer", None)
+        if timer is not None:
+            timer.cancel()
+            self._dismiss_timer = None
 
     def _answer(self, text: str) -> str:
         if self.mind is not None:
@@ -181,23 +249,25 @@ class JarvisApp:
         self._build()
         self._build_voice()
 
-        greeting = self.jarvis.wake(channel="voice" if self.voice else "text")
-
         if self.hud is None:
-            self._run_terminal(greeting)
+            self._run_terminal(self.jarvis.wake(channel="text"))
             return
 
         # The window has to own the main thread -- tkinter will not run
-        # anywhere else -- so the greeting is queued and appears as soon as
-        # the loop starts.
+        # anywhere else -- so everything below is queued and appears as soon
+        # as the loop starts.
         for note in self._notes:
             self.hud.say(note)
-        self.hud.say(greeting)
+
         if self.voice is not None:
+            # Hidden and waiting. The greeting belongs to the first summon,
+            # not to startup -- nobody is looking at the screen yet, and
+            # saying it now means he says it twice.
             self.hud.status("say 'hey jarvis'")
-            threading.Thread(
-                target=lambda: self.voice.say(greeting), daemon=True
-            ).start()
+            print(f"  Listening for \"{self.config.wake_phrase}\". Close the window to stop.")
+        else:
+            self.hud.say(self.jarvis.wake(channel="text"))
+
         try:
             self.hud.run()
         finally:
@@ -221,6 +291,7 @@ class JarvisApp:
             self._shutdown()
 
     def _shutdown(self) -> None:
+        self._cancel_dismissal()
         if self.daemon is not None:
             self.daemon.stop()
             self.daemon = None
