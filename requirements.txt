@@ -1,0 +1,24 @@
+# Core -- Jarvis runs with only these.
+PyYAML>=6.0
+
+# --- Market data ----------------------------------------------------------
+# Without yfinance, Jarvis falls back to its offline synthetic market.
+yfinance>=0.2.40
+
+# --- News -----------------------------------------------------------------
+# Optional: there is a stdlib RSS/Atom parser fallback if this is absent.
+feedparser>=6.0
+
+# --- Learning from curated YouTube traders --------------------------------
+# Optional: transcript ingestion. Channel discovery also needs YOUTUBE_API_KEY.
+youtube-transcript-api>=0.6.2
+
+# --- Voice ----------------------------------------------------------------
+# All optional. Jarvis drops to typed input/output if any are missing.
+# pvporcupine>=3.0        # on-device "jarvis" wake word (needs PICOVOICE_ACCESS_KEY)
+# pyaudio>=0.2.13         # microphone access for Porcupine
+# SpeechRecognition>=3.10 # speech-to-text
+# pyttsx3>=2.90           # offline text-to-speech
+
+# --- Development ----------------------------------------------------------
+# pytest>=8.0

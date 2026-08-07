@@ -1,0 +1,159 @@
+# ---------------------------------------------------------------------------
+# Jarvis curated teachers
+# ---------------------------------------------------------------------------
+# Jarvis will ONLY study accounts listed here, and only after each one passes
+# vetting in jarvis/learning/sources.py. Anything not in this file is ignored,
+# which is what keeps random unverified "trading gurus" out of its knowledge.
+#
+# Every entry is scored on the `evidence` tags below. Recognised tags and their
+# weights (see EVIDENCE_WEIGHTS in sources.py):
+#
+#   regulatory_registration    0.30  licensed / registered advisor, broker, CTA
+#   audited_track_record       0.28  results verified by an independent party
+#   published_positions        0.16  calls posted publicly BEFORE the outcome
+#   institutional_background   0.14  verifiable fund / trading desk experience
+#   published_book_or_research 0.10  authored books or peer-reviewed research
+#   long_tenure                0.10  5+ years of continuous public output
+#   peer_endorsement           0.06  endorsed by other verified professionals
+#   platform_verified          0.06  platform verification badge
+#
+#   >= 0.45 -> verified    (lessons start credible)
+#   >= 0.18 -> provisional (Jarvis reads it, but at low confidence)
+#    < 0.18 -> rejected    (never studied)
+#
+# Hard disqualifiers override everything: guaranteed returns, "signals group",
+# "never loses", copy-my-trades pitches, "double your money". Those are
+# rejected no matter how large the account is.
+#
+# NOTE ON THE SHIPPED LIST: the entries below are institutions, exchanges and
+# established financial newsrooms whose credentials are matters of public
+# record. Individual traders are deliberately NOT pre-filled -- vouching for a
+# specific person's trading record is a judgement only you can make. Add the
+# ones you trust under the templates at the bottom, with honest evidence tags.
+# ---------------------------------------------------------------------------
+
+youtube:
+  - handle: "@cmegroup"
+    name: "CME Group"
+    url: "https://www.youtube.com/@cmegroup"
+    evidence:
+      - regulatory_registration
+      - institutional_background
+      - long_tenure
+      - platform_verified
+    tenure_years: 15
+    notes: "Derivatives exchange operator; futures and options education."
+
+  - handle: "@Bloomberg"
+    name: "Bloomberg Television"
+    url: "https://www.youtube.com/@markets"
+    evidence:
+      - institutional_background
+      - published_book_or_research
+      - long_tenure
+      - platform_verified
+    tenure_years: 15
+    notes: "Financial newsroom; market structure and macro coverage."
+
+  - handle: "@YahooFinance"
+    name: "Yahoo Finance"
+    url: "https://www.youtube.com/@YahooFinance"
+    evidence:
+      - institutional_background
+      - long_tenure
+      - platform_verified
+    tenure_years: 12
+    notes: "Market data publisher; earnings and fundamentals coverage."
+
+  - handle: "@Investopedia"
+    name: "Investopedia"
+    url: "https://www.youtube.com/@investopedia"
+    evidence:
+      - published_book_or_research
+      - long_tenure
+      - platform_verified
+    tenure_years: 14
+    notes: "Reference publisher; definitional and mechanical concepts."
+
+  - handle: "@chatwithtraders"
+    name: "Chat With Traders"
+    url: "https://www.youtube.com/@chatwithtraders"
+    evidence:
+      - institutional_background
+      - long_tenure
+      - peer_endorsement
+    tenure_years: 10
+    notes: "Long-form interviews with documented professional traders."
+
+  - handle: "@RealVision"
+    name: "Real Vision"
+    url: "https://www.youtube.com/@RealVisionFinance"
+    evidence:
+      - institutional_background
+      - long_tenure
+      - peer_endorsement
+    tenure_years: 10
+    notes: "Interviews with fund managers and institutional allocators."
+
+  # --- TEMPLATE: add individual traders you have personally vetted ---------
+  # - handle: "@their_channel"
+  #   name: "Their Name"
+  #   url: "https://www.youtube.com/@their_channel"
+  #   evidence:
+  #     - published_positions        # they post calls before outcomes
+  #     - institutional_background   # verifiable desk/fund history
+  #     - long_tenure
+  #   tenure_years: 8
+  #   followers: 250000
+  #   bio: "Paste their real bio here -- it is screened for scam language."
+  #   notes: "Why YOU believe this person is proven. Be specific."
+
+instagram:
+  # Instagram has no general read API for other accounts, so Jarvis ingests
+  # these via the drop folder at ~/.jarvis/inbox/instagram/ (see README).
+  # The handle here must match the author name in the dropped file.
+  #
+  # - handle: "their_handle"
+  #   name: "Their Name"
+  #   evidence:
+  #     - published_positions
+  #     - long_tenure
+  #   tenure_years: 6
+
+tiktok:
+  # Same as Instagram: drop captions/transcripts in
+  # ~/.jarvis/inbox/tiktok/ with '@handle' as the first line.
+  #
+  # - handle: "their_handle"
+  #   name: "Their Name"
+  #   evidence:
+  #     - institutional_background
+  #     - long_tenure
+  #   tenure_years: 5
+
+web:
+  - handle: "sec.gov"
+    name: "U.S. Securities and Exchange Commission"
+    url: "https://www.sec.gov"
+    evidence:
+      - regulatory_registration
+      - published_book_or_research
+      - long_tenure
+    tenure_years: 30
+
+  - handle: "federalreserve.gov"
+    name: "Federal Reserve"
+    url: "https://www.federalreserve.gov"
+    evidence:
+      - regulatory_registration
+      - published_book_or_research
+      - long_tenure
+    tenure_years: 30
+
+  - handle: "finance.yahoo.com"
+    name: "Yahoo Finance"
+    url: "https://finance.yahoo.com"
+    evidence:
+      - institutional_background
+      - long_tenure
+    tenure_years: 20

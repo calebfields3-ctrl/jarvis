@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis-trading-assistant"
+version = "1.0.0"
+description = "Jarvis -- a self-learning AI trading assistant with persistent memory"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+market = ["yfinance>=0.2.40"]
+news = ["feedparser>=6.0"]
+learning = ["youtube-transcript-api>=0.6.2"]
+voice = [
+    "pvporcupine>=3.0",
+    "pyaudio>=0.2.13",
+    "SpeechRecognition>=3.10",
+    "pyttsx3>=2.90",
+]
+dev = ["pytest>=8.0"]
+all = [
+    "yfinance>=0.2.40",
+    "feedparser>=6.0",
+    "youtube-transcript-api>=0.6.2",
+]
+
+[project.scripts]
+jarvis = "jarvis.cli:main"
+
+[tool.setuptools]
+packages = [
+    "jarvis",
+    "jarvis.memory",
+    "jarvis.portfolio",
+    "jarvis.market",
+    "jarvis.learning",
+    "jarvis.safety",
+    "jarvis.voice",
+]
+
+# The editable data files (watchlist, curated sources, news feeds) live in
+# data/ at the repo root so they stay easy to edit. An editable install
+# (`pip install -e .`) finds them automatically; for any other layout, point
+# JARVIS_DATA_DIR at the directory.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
