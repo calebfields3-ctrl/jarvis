@@ -17,6 +17,7 @@ from datetime import datetime
 
 from .brain import Jarvis
 from .config import get_config
+from .market.yahoo import quiet_yfinance
 from .voice.io import VoiceChannel
 
 BANNER = r"""
@@ -472,6 +473,8 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # Third-party network chatter is silenced unless you asked to see it.
+    quiet_yfinance(not args.verbose)
 
     if not getattr(args, "func", None):
         parser.print_help()

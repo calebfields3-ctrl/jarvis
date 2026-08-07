@@ -45,6 +45,25 @@ except Exception:  # pragma: no cover
     _yf = None
 
 
+def quiet_yfinance(quiet: bool = True) -> None:
+    """Stop yfinance printing stack traces for failures we already handle.
+
+    yfinance logs every failed download at ERROR straight to the root logger.
+    Since every call site here degrades gracefully and reports the problem in
+    Jarvis's own words (stale prices, scan notes), the raw traces are pure
+    noise -- and they arrive *before* the greeting, which is the first thing
+    Caleb sees. ``jarvis --verbose`` turns them back on for debugging.
+    """
+    level = logging.CRITICAL if quiet else logging.NOTSET
+    for name in ("yfinance", "yfinance.data", "yfinance.ticker", "peewee",
+                 "urllib3", "curl_cffi"):
+        logging.getLogger(name).setLevel(level)
+
+
+# Quiet by default; the CLI re-enables it under --verbose.
+quiet_yfinance(True)
+
+
 def yfinance_available() -> bool:
     return _yf is not None
 

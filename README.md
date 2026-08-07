@@ -76,6 +76,9 @@ work** in the market it watches. That is the whole point.
 
 ## Install
 
+**New here? See [QUICKSTART.md](QUICKSTART.md)** — prerequisites, first run,
+the daily rhythm, and troubleshooting, all verified end to end.
+
 ```bash
 git clone <this repo> && cd jarvis
 python3 -m venv .venv && source .venv/bin/activate
