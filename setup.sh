@@ -71,10 +71,22 @@ else
     say "Track record already built -- skipping."
 fi
 
-# ---------------------------------------------------------------- 5. Done
+# ------------------------------------------------------- 5. Auto-activation
+# Without this, the very next thing people type is `jarvis wake` and they get
+# "command not found", because the venv is not active in their shell. Telling
+# them to activate it is not enough -- it needs to just work.
+ACTIVATE_LINE="cd $(pwd) && source .venv/bin/activate"
+if [ -f "$HOME/.bashrc" ] && grep -Fq "$ACTIVATE_LINE" "$HOME/.bashrc" 2>/dev/null; then
+    say "New terminals already start inside Jarvis -- nothing to do."
+else
+    printf "# Added by Jarvis setup.sh -- start new shells ready to go\n%s\n" \
+        "$ACTIVATE_LINE" >> "$HOME/.bashrc"
+    say "New terminals will now start with Jarvis ready."
+fi
+
+# ---------------------------------------------------------------- 6. Done
 printf "\n${GREEN}${BOLD}Jarvis is ready.${OFF}\n\n"
-printf "  Every time you open a new terminal, run these two lines first:\n\n"
-printf "    ${BOLD}cd ~/jarvis${OFF}\n"
+printf "  ${BOLD}Run this one line now${OFF} (just this once -- new terminals do it for you):\n\n"
 printf "    ${BOLD}source .venv/bin/activate${OFF}\n\n"
 printf "  Then try:\n\n"
 printf "    ${BOLD}jarvis wake${OFF}       he says hello\n"
