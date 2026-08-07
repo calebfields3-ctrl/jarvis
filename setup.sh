@@ -49,6 +49,14 @@ else
     say "Window toolkit already present."
 fi
 
+# The microphone stack. pyaudio compiles against portaudio, and text-to-speech
+# needs a voice installed, so both need system packages before pip can work.
+# Every one of these is optional -- without them he falls back to typed input.
+if ! python3 -c "import speech_recognition" >/dev/null 2>&1; then
+    say "Installing microphone support (for \"hey Jarvis\")..."
+    sudo apt-get install -y portaudio19-dev python3-pyaudio espeak-ng flac >/dev/null 2>&1 || true
+fi
+
 # ------------------------------------------------------- 2. Virtual environment
 # A venv keeps Jarvis's packages separate from the system Python, so nothing
 # here can break anything else on the machine.
@@ -77,6 +85,18 @@ else
 fi
 
 command -v jarvis >/dev/null 2>&1 || die "Jarvis installed but is not on the PATH. Try closing the terminal, reopening it, and running ./setup.sh again."
+
+# Voice is a separate install because pyaudio fails to build on plenty of
+# machines and it must not take the whole setup down with it.
+if python -c "import speech_recognition" >/dev/null 2>&1; then
+    say "Microphone support ready -- \"hey Jarvis\" will work."
+elif python -m pip install --quiet SpeechRecognition pyaudio pyttsx3 2>/dev/null; then
+    say "Microphone support installed -- \"hey Jarvis\" will work."
+else
+    warn "Couldn't install the microphone packages, so \"hey Jarvis\" won't work yet."
+    warn "Everything else runs -- type to him in the box instead. To retry later:"
+    warn "    sudo apt install -y portaudio19-dev espeak-ng && pip install SpeechRecognition pyaudio pyttsx3"
+fi
 
 # --------------------------------------------------------------- 3b. The key
 # Without this he falls back to matching your words against a list, which

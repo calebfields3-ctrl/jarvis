@@ -100,7 +100,15 @@ class Config:
     google_cse_id: str | None = os.environ.get("GOOGLE_CSE_ID")
 
     # --- voice ----------------------------------------------------------
-    voice_enabled: bool = _env_flag("JARVIS_VOICE", False)
+    # On by default: the wake word is how you're meant to reach him, and both
+    # the listener and the speaker fall back to typed input on their own when
+    # the packages or the microphone aren't there. Making this opt-in meant a
+    # correct install still sat silent until you found an environment variable.
+    # Set JARVIS_VOICE=0 to keep him quiet.
+    # A default_factory, not a plain default: a dataclass default is evaluated
+    # once when the class is defined, so a plain one would read the
+    # environment at import time and ignore anything set afterwards.
+    voice_enabled: bool = field(default_factory=lambda: _env_flag("JARVIS_VOICE", True))
     porcupine_key: str | None = os.environ.get("PICOVOICE_ACCESS_KEY")
 
     def __post_init__(self) -> None:

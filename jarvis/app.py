@@ -83,9 +83,12 @@ class JarvisApp:
             self.hud = HUD(
                 on_submit=self._handle,
                 on_close=self._shutdown,
-                # Only hide it if there will be a wake word to bring it back.
-                # A window that never appears is just a broken program.
-                start_hidden=self.use_voice,
+                # Only hide it if a wake word is actually live to bring it
+                # back. Deciding this from `use_voice` rather than from a
+                # working microphone means a failed mic leaves the window
+                # hidden with nothing able to summon it -- a program that
+                # starts and then appears to do nothing at all.
+                start_hidden=self.voice is not None,
             )
         elif self.use_hud:
             self._note(f"Running in the terminal -- no window available.\n{problem}")
@@ -103,25 +106,39 @@ class JarvisApp:
                 "rather than a full mind. Set the key and restart for the real thing."
             )
 
-    def _build_voice(self) -> None:
+    def _probe_voice(self) -> None:
+        """Find out whether the microphone actually works.
+
+        Runs before the window is built, because whether there is a live wake
+        word decides whether the window may start hidden.
+        """
         if not self.use_voice:
             return
         try:
             from jarvis.voice.io import VoiceChannel
 
-            self.voice = VoiceChannel(self.config)
+            channel = VoiceChannel(self.config)
         except Exception as exc:
             self._note(f"No microphone, so type to me instead. ({exc})")
             return
 
-        if not self.voice.is_voice:
+        if not channel.is_voice:
             # A text listener as the wake detector would sit on stdin
             # competing with the window for input, which is worse than
             # simply not having a wake word.
-            self.voice = None
-            self._note("No microphone packages installed -- type to me instead.")
+            self._note(
+                "No microphone, so \"hey Jarvis\" won't work -- type to me instead. "
+                "To fix it: sudo apt install -y portaudio19-dev espeak-ng "
+                "&& pip install SpeechRecognition pyaudio pyttsx3"
+            )
             return
 
+        self.voice = channel
+
+    def _start_voice(self) -> None:
+        """Begin listening. Only once the window exists to be summoned."""
+        if self.voice is None:
+            return
         self.daemon = WakeDaemon(
             self.voice.wake, on_wake=self._woken, on_error=self._note
         )
@@ -246,8 +263,9 @@ class JarvisApp:
 
     # ------------------------------------------------------------------ run
     def run(self) -> None:
+        self._probe_voice()
         self._build()
-        self._build_voice()
+        self._start_voice()
 
         if self.hud is None:
             self._run_terminal(self.jarvis.wake(channel="text"))

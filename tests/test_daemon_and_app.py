@@ -431,3 +431,71 @@ def test_an_unanswerable_prompt_is_a_refusal(app, monkeypatch):
     monkeypatch.setattr("builtins.input", no_stdin)
     decision = type("D", (), {"reason": "it deletes things"})()
     assert app._ask_in_terminal("rm x", decision) is False
+
+
+# ------------------------------------------------- the window must be reachable
+
+
+def test_the_window_starts_visible_when_the_microphone_failed(app, monkeypatch):
+    """A hidden window with no working wake word can never be summoned.
+
+    The program would start, appear to do nothing, and there would be no way
+    to tell it apart from a crash.
+    """
+    monkeypatch.setattr("jarvis.app.hud_problem", lambda: None)
+    app.use_hud = True
+    app.use_voice = True
+    monkeypatch.setattr(app, "_probe_voice", lambda: None)  # mic didn't come up
+
+    app._probe_voice()
+    app._build()
+
+    assert app.voice is None
+    assert app.hud.visible, "the window was hidden with nothing able to summon it"
+
+
+def test_the_window_starts_hidden_when_the_wake_word_is_live(app, monkeypatch):
+    monkeypatch.setattr("jarvis.app.hud_problem", lambda: None)
+    app.use_hud = True
+    app.voice = FakeVoice()
+
+    app._build()
+
+    assert not app.hud.visible
+
+
+def test_a_missing_microphone_says_how_to_fix_it(app, monkeypatch):
+    class DeadChannel:
+        is_voice = False
+
+        def __init__(self, config):
+            pass
+
+    monkeypatch.setattr("jarvis.voice.io.VoiceChannel", DeadChannel)
+    app.use_voice = True
+    app._probe_voice()
+
+    assert app.voice is None
+    note = " ".join(app._notes)
+    assert "hey Jarvis" in note and "pip install" in note
+
+
+def test_listening_does_not_begin_before_there_is_a_window_to_summon(app):
+    """Waking with no HUD built yet would answer into nothing."""
+    app.voice = None
+    app._start_voice()
+    assert app.daemon is None
+
+
+def test_voice_is_on_by_default_so_a_correct_install_is_not_silent(home):
+    """It used to need an environment variable nobody knew to set."""
+    from jarvis.config import Config
+
+    assert Config().voice_enabled is True
+
+
+def test_voice_can_still_be_turned_off(home, monkeypatch):
+    from jarvis.config import Config
+
+    monkeypatch.setenv("JARVIS_VOICE", "0")
+    assert Config().voice_enabled is False
