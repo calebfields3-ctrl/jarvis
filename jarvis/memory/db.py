@@ -14,7 +14,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 1
+# v2 added training_attempts. Every change so far has been purely additive, so
+# `CREATE TABLE IF NOT EXISTS` upgrades an existing database in place.
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 -- Owner profile: name, preferences, anything Jarvis should remember about you.
@@ -178,6 +180,19 @@ CREATE TABLE IF NOT EXISTS url_verdicts (
     reasons     TEXT,
     checked_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- ------------------------------------------------------------- training
+-- Caleb's progress through the day-trading curriculum. One row per attempt,
+-- so improvement over time is visible rather than overwritten.
+CREATE TABLE IF NOT EXISTS training_attempts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_key   TEXT NOT NULL,
+    score        INTEGER NOT NULL,
+    out_of       INTEGER NOT NULL,
+    passed       INTEGER NOT NULL,
+    attempted_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_training_module ON training_attempts(module_key);
 
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,

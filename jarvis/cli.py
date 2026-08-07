@@ -153,6 +153,58 @@ def cmd_scan(args, jarvis: Jarvis) -> int:
     return 0
 
 
+def cmd_daytrade(args, jarvis: Jarvis) -> int:
+    symbols = args.symbols or None
+    report = jarvis.daytrade_scan(symbols, interval=args.interval, max_symbols=args.max_symbols)
+    print(jarvis.daytrade_briefing(report, top=args.top))
+    return 0
+
+
+def cmd_plan(args, jarvis: Jarvis) -> int:
+    plan = jarvis.plan_trade(args.symbol, args.direction, args.entry, args.stop, args.target)
+    print(plan.describe())
+    status = jarvis.trading_status()
+    if not status.can_trade:
+        print()
+        print(status.describe())
+    return 0 if plan.is_viable else 1
+
+
+def cmd_riskstatus(args, jarvis: Jarvis) -> int:
+    print(jarvis.trading_status().describe())
+    return 0
+
+
+def cmd_train(args, jarvis: Jarvis) -> int:
+    if args.module:
+        from .learning.coach import MODULES_BY_KEY
+
+        module = MODULES_BY_KEY.get(args.module)
+        if module is None:
+            print(f"No module called {args.module!r}.")
+            return 1
+        print(jarvis.teach(module))
+        return 0
+    progress = jarvis.coach.progress()
+    print(f"Training: {progress['passed']}/{progress['total']} modules passed.")
+    if progress["completed_modules"]:
+        for title in progress["completed_modules"]:
+            print(f"  [done] {title}")
+    print()
+    print(jarvis.teach())
+    return 0
+
+
+def cmd_quiz(args, jarvis: Jarvis) -> int:
+    print(jarvis.submit_quiz(args.module, args.answers))
+    return 0
+
+
+def cmd_review(args, jarvis: Jarvis) -> int:
+    print(jarvis.review_trades(limit=args.limit))
+    return 0
+
+
 def cmd_learn(args, jarvis: Jarvis) -> int:
     result = jarvis.learn_cycle(study_web=not args.no_web)
     print(json.dumps(result, indent=2, default=str))
@@ -290,6 +342,38 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("symbols", nargs="*", help="limit to these symbols")
     scan.add_argument("--top", type=int, default=8)
     scan.set_defaults(func=cmd_scan)
+
+    day = sub.add_parser("daytrade", help="intraday setup scan with sizing and risk checks")
+    day.add_argument("symbols", nargs="*")
+    day.add_argument("--interval", default="5m", choices=["1m", "2m", "5m", "15m", "30m", "1h"])
+    day.add_argument("--top", type=int, default=5)
+    day.add_argument("--max-symbols", type=int, default=120)
+    day.set_defaults(func=cmd_daytrade)
+
+    plan = sub.add_parser("plan", help="size a trade from its stop")
+    plan.add_argument("symbol")
+    plan.add_argument("direction", choices=["long", "short"])
+    plan.add_argument("entry", type=float)
+    plan.add_argument("stop", type=float)
+    plan.add_argument("target", type=float)
+    plan.set_defaults(func=cmd_plan)
+
+    sub.add_parser("risk", help="PDT rule and today's circuit breakers").set_defaults(
+        func=cmd_riskstatus
+    )
+
+    train = sub.add_parser("train", help="day-trading curriculum")
+    train.add_argument("module", nargs="?", help="jump to a specific module")
+    train.set_defaults(func=cmd_train)
+
+    quiz = sub.add_parser("quiz", help="answer a module's quiz, e.g. quiz risk_sizing a b c")
+    quiz.add_argument("module")
+    quiz.add_argument("answers", nargs="+")
+    quiz.set_defaults(func=cmd_quiz)
+
+    review = sub.add_parser("review", help="coach's review of your real trades")
+    review.add_argument("--limit", type=int, default=100)
+    review.set_defaults(func=cmd_review)
 
     learn = sub.add_parser("learn", help="one study + grading cycle")
     learn.add_argument("--no-web", action="store_true")

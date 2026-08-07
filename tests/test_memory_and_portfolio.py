@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from jarvis.memory.store import Memory
-from jarvis.portfolio.tracker import PortfolioTracker
+from jarvis.portfolio.tracker import PortfolioTracker, market_now
 
 
 # ------------------------------------------------------------------- memory
@@ -113,7 +113,9 @@ def test_previous_day_pnl(tracker):
     tracker.record_cash(10_000)
     tracker.record_trade("AAPL", "buy", 10, 100.0)
 
-    yesterday = date.today() - timedelta(days=1)
+    # Market time, not the system clock -- the ledger is stamped in Eastern, so
+    # a UTC "yesterday" can still be today in the market's calendar.
+    yesterday = market_now().date() - timedelta(days=1)
     prior = tracker.snapshot(price_lookup=lambda s: {"AAPL": 100.0})
     tracker.close_day(prior, as_of_date=yesterday)
 

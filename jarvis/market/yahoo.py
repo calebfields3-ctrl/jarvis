@@ -16,6 +16,29 @@ from .patterns import Bar
 
 log = logging.getLogger(__name__)
 
+# Yahoo caps intraday history: 1m goes back ~7 days, other intraday intervals
+# ~60 days. Asking for more silently returns nothing, so requests are clamped.
+INTRADAY_MAX_PERIOD = {"1m": "7d", "2m": "60d", "5m": "60d", "15m": "60d",
+                       "30m": "60d", "60m": "730d", "90m": "60d", "1h": "730d"}
+
+
+def is_intraday(interval: str) -> bool:
+    return interval.endswith(("m", "h")) and interval not in {"1mo", "3mo"}
+
+
+def _format_timestamp(ts, interval: str) -> str:
+    """Daily bars keep a date; intraday bars must keep the clock time.
+
+    Dropping the time on intraday data collapses every bar in a session to the
+    same key, which silently destroys VWAP, opening ranges and session grouping.
+    """
+    if is_intraday(interval):
+        try:
+            return ts.strftime("%Y-%m-%d %H:%M:%S")
+        except AttributeError:
+            return str(ts)
+    return str(ts.date() if hasattr(ts, "date") else ts)
+
 try:  # pragma: no cover - import guard
     import yfinance as _yf
 except Exception:  # pragma: no cover
@@ -60,6 +83,7 @@ class YahooClient:
             return cached
         if _yf is None:
             return []
+        period = self._clamp_period(period, interval)
         try:
             frame = _yf.Ticker(symbol).history(
                 period=period, interval=interval, auto_adjust=False
@@ -72,7 +96,7 @@ class YahooClient:
             try:
                 bars.append(
                     Bar(
-                        ts=str(ts.date() if hasattr(ts, "date") else ts),
+                        ts=_format_timestamp(ts, interval),
                         open=float(row["Open"]),
                         high=float(row["High"]),
                         low=float(row["Low"]),
@@ -92,6 +116,7 @@ class YahooClient:
         """One batched download for many symbols -- far kinder to Yahoo than N calls."""
         if _yf is None or not symbols:
             return {}
+        period = self._clamp_period(period, interval)
         out: dict[str, list[Bar]] = {}
         pending = []
         for sym in symbols:
@@ -130,7 +155,7 @@ class YahooClient:
                     continue
                 bars.append(
                     Bar(
-                        ts=str(ts.date() if hasattr(ts, "date") else ts),
+                        ts=_format_timestamp(ts, interval),
                         open=float(row["Open"]),
                         high=float(row["High"]),
                         low=float(row["Low"]),
@@ -142,6 +167,26 @@ class YahooClient:
                 out[sym] = bars
                 self._put(f"bars:{sym}:{period}:{interval}", bars, self.bars_ttl)
         return out
+
+    @staticmethod
+    def _clamp_period(period: str, interval: str) -> str:
+        """Keep intraday requests inside Yahoo's retention limits.
+
+        Over the limit Yahoo returns an empty frame rather than an error, which
+        looks exactly like "this symbol has no data" and is very hard to debug.
+        """
+        if not is_intraday(interval):
+            return period
+        cap = INTRADAY_MAX_PERIOD.get(interval)
+        if cap is None:
+            return period
+        order = ["1d", "5d", "7d", "1mo", "60d", "3mo", "6mo", "1y", "730d", "2y", "5y", "max"]
+        try:
+            if order.index(period) > order.index(cap):
+                return cap
+        except ValueError:
+            return cap
+        return period
 
     # -------------------------------------------------------------- prices
     def prices(self, symbols: Sequence[str]) -> dict[str, float]:

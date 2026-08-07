@@ -11,7 +11,19 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Iterable, Mapping
 
+from ..market.session import EASTERN
 from ..memory.db import Database
+
+
+def market_now() -> datetime:
+    """The current moment on the market's clock.
+
+    The whole ledger is stamped in US/Eastern rather than UTC on purpose. A
+    "trading day" is an Eastern calendar day, and the PDT rule counts day
+    trades within it. Stamping in UTC means every trade after 20:00 ET lands
+    on tomorrow's date and silently drops out of the day-trade count.
+    """
+    return datetime.now(tz=EASTERN)
 
 
 @dataclass
@@ -95,7 +107,7 @@ class PortfolioTracker:
             raise ValueError("side must be 'buy' or 'sell'")
         if quantity <= 0 or price < 0:
             raise ValueError("quantity must be positive and price non-negative")
-        stamp = (executed_at or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M:%S")
+        stamp = (executed_at or market_now()).strftime("%Y-%m-%d %H:%M:%S")
         return self.db.execute(
             "INSERT INTO trades(symbol, side, quantity, price, fees, executed_at, note) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -105,7 +117,7 @@ class PortfolioTracker:
     def record_cash(
         self, amount: float, *, occurred_at: datetime | None = None, note: str | None = None
     ) -> int:
-        stamp = (occurred_at or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M:%S")
+        stamp = (occurred_at or market_now()).strftime("%Y-%m-%d %H:%M:%S")
         return self.db.execute(
             "INSERT INTO cash_flows(amount, occurred_at, note) VALUES (?, ?, ?)",
             (amount, stamp, note),
@@ -169,7 +181,7 @@ class PortfolioTracker:
         in ``stale_prices`` so the greeting can say so rather than quietly
         reporting a wrong number.
         """
-        as_of = as_of or datetime.now(timezone.utc)
+        as_of = as_of or market_now()
         positions = [p for p in self.positions(as_of) if p.quantity > 0]
         stale: list[str] = []
         if positions and price_lookup:
@@ -227,7 +239,7 @@ class PortfolioTracker:
         )
 
     def previous_snapshot(self, before: date | None = None) -> dict[str, Any] | None:
-        before = before or datetime.now(timezone.utc).date()
+        before = before or market_now().date()
         row = self.db.query_one(
             "SELECT * FROM equity_snapshots WHERE as_of_date < ? "
             "ORDER BY as_of_date DESC LIMIT 1",

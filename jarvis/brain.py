@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
 
 from .config import Config, get_config
+from .learning.coach import CURRICULUM, MODULES_BY_KEY, TradingCoach, TrainingModule
 from .learning.curriculum import seed_foundations, seed_pattern_hypotheses
 from .learning.distill import RuleBasedDistiller, ingest_lessons
 from .learning.evaluate import EvaluationReport, OutcomeEvaluator
@@ -27,10 +28,13 @@ from .learning.social import SocialStudy
 from .learning.sources import SourceRegistry
 from .learning.web import WebResearcher
 from .learning.youtube import YouTubeStudy
+from .market.intraday import IntradaySignal, scan_intraday
 from .market.patterns import Detection, scan_bars
 from .market.provider import SyntheticProvider, YahooProvider, build_provider
+from .market.session import SessionClock
 from .market.tradingview import TradingViewScanner, load_universe
 from .memory.store import Memory, utcnow
+from .portfolio.risk import RiskManager, RiskProfile
 from .portfolio.tracker import PortfolioSnapshot, PortfolioTracker
 from .safety.url_safety import URLSafetyChecker
 
@@ -52,6 +56,21 @@ class ScanReport:
 
     def best(self, n: int = 5) -> list[tuple[str, Detection, float]]:
         return sorted(self.detections, key=lambda d: d[2], reverse=True)[:n]
+
+
+@dataclass
+class DayTradeReport:
+    """One intraday sweep, plus whether Caleb is even clear to trade."""
+
+    clock: SessionClock
+    symbols_scanned: int = 0
+    setups: list[tuple[str, IntradaySignal, float]] = field(default_factory=list)
+    recorded: int = 0
+    status: Any = None                       # DayTradeStatus
+    notes: list[str] = field(default_factory=list)
+
+    def best(self, n: int = 5) -> list[tuple[str, IntradaySignal, float]]:
+        return sorted(self.setups, key=lambda s: s[2], reverse=True)[:n]
 
 
 class Jarvis:
@@ -101,6 +120,8 @@ class Jarvis:
             promotion_samples=self.config.lesson_promotion_samples,
             promotion_confidence=self.config.lesson_promotion_confidence,
         )
+        self.risk = RiskManager(self.memory.db, RiskProfile())
+        self.coach = TradingCoach(self.memory.training, self.risk)
         self.session_id: int | None = None
         self._bootstrap()
 
@@ -331,6 +352,190 @@ class Jarvis:
             lines.append(f"Note: {note}")
         return "\n".join(lines)
 
+    # ----------------------------------------------------------- day trading
+    def daytrade_scan(
+        self,
+        symbols: Sequence[str] | None = None,
+        *,
+        interval: str = "5m",
+        clock: SessionClock | None = None,
+        max_symbols: int = 120,
+    ) -> DayTradeReport:
+        """Sweep for intraday setups and check Caleb is clear to take one.
+
+        Deliberately narrower than the daily scan: intraday data is far heavier
+        per symbol, and a day trader watching 600 names is not watching any of
+        them. Defaults to the most liquid slice of the watchlist.
+        """
+        clock = clock or SessionClock.live()
+        watchlist = list(self.universe if symbols is None else symbols)[:max_symbols]
+        report = DayTradeReport(clock=clock, symbols_scanned=len(watchlist))
+
+        equity = self.snapshot().total_value
+        report.status = self.risk.status(equity)
+        report.notes.append(clock.describe())
+
+        if not clock.phase.is_regular_hours:
+            report.notes.append(
+                "Outside regular hours -- intraday setups below are from the last "
+                "session and are not live entries."
+            )
+        elif not clock.can_open_new_trades:
+            report.notes.append(
+                "Too close to the bell (or midday) to open a new day trade."
+            )
+
+        if not watchlist:
+            report.notes.append("No symbols to scan.")
+            return report
+
+        histories = self.provider.bulk_bars(watchlist, period="1mo", interval=interval)
+        for symbol, bars in histories.items():
+            if len(bars) < 30:
+                continue
+            for signal in scan_intraday(bars):
+                lesson = self.memory.knowledge.lesson_for_pattern(signal.pattern_key)
+                confidence = round(
+                    signal.strength * (0.4 + 0.6 * (lesson.confidence if lesson else 0.5)), 3
+                )
+                report.setups.append((symbol, signal, confidence))
+                # Horizon in bars-to-close, so the call is graded on the same
+                # session it was taken in -- a day trade that needs three days
+                # to work was not a day trade.
+                bars_left = max(1, int((signal.features.get("minutes_left", 60)) // 5) or 12)
+                signal_id = self.memory.signals.record(
+                    symbol=symbol,
+                    pattern_key=signal.pattern_key,
+                    direction=signal.direction,
+                    price=signal.entry,
+                    timeframe=interval,
+                    horizon_bars=bars_left,
+                    features={**signal.features, "stop": signal.stop,
+                              "target": signal.target, "phase": signal.phase.value},
+                    lesson_id=lesson.id if lesson else None,
+                    confidence=confidence,
+                    detected_at=bars[-1].ts,
+                )
+                if signal_id:
+                    report.recorded += 1
+        return report
+
+    def daytrade_briefing(
+        self, report: DayTradeReport | None = None, *, top: int = 5
+    ) -> str:
+        report = report or self.daytrade_scan()
+        equity = report.status.equity if report.status else 0.0
+        lines = [report.clock.describe(), ""]
+
+        if report.status is not None:
+            lines.append(report.status.describe())
+            lines.append("")
+            if not report.status.can_trade:
+                lines.append(
+                    "I'm not going to hand you setups while you're blocked. "
+                    "Come back tomorrow."
+                )
+                return "\n".join(lines)
+
+        lines.append(
+            f"Scanned {report.symbols_scanned} charts intraday; "
+            f"{len(report.setups)} actionable setups."
+        )
+        best = report.best(top)
+        if not best:
+            lines.append("Nothing meets the bar right now. No trade is a position.")
+        for symbol, signal, confidence in best:
+            lesson = self.memory.knowledge.lesson_for_pattern(signal.pattern_key)
+            samples = (lesson.support + lesson.refute) if lesson else 0
+            track = (
+                f"{lesson.support / samples * 100:.0f}% over {samples} graded"
+                if lesson and samples else "untested"
+            )
+            plan = self.risk.plan_trade(
+                symbol, signal.direction, signal.entry, signal.stop, signal.target,
+                equity=equity,
+            )
+            lines.append("")
+            lines.append(
+                f"  {symbol} {signal.direction.upper()} -- {signal.pattern_key} "
+                f"(conf {confidence:.2f}, {track})"
+            )
+            lines.append(f"    {signal.description}")
+            lines.append(f"    {plan.describe().splitlines()[0] if plan.is_viable else ''}".rstrip())
+            for line in plan.describe().splitlines()[1:]:
+                lines.append(f"    {line.strip()}")
+            if not plan.is_viable:
+                lines.append(f"    no trade: {plan.rejected_reason}")
+        return "\n".join(lines)
+
+    def plan_trade(
+        self, symbol: str, direction: str, entry: float, stop: float, target: float
+    ):
+        """Size a trade Caleb is considering, against live account equity."""
+        return self.risk.plan_trade(
+            symbol, direction, entry, stop, target, equity=self.snapshot().total_value
+        )
+
+    def trading_status(self):
+        return self.risk.status(self.snapshot().total_value)
+
+    # -------------------------------------------------------------- coaching
+    def next_lesson(self) -> TrainingModule | None:
+        return self.coach.next_module()
+
+    def teach(self, module: TrainingModule | None = None) -> str:
+        """Present the next module's teaching, then its quiz."""
+        module = module or self.coach.next_module()
+        if module is None:
+            return (
+                "You've passed every module in the curriculum. From here the "
+                "training is your own journal -- run `jarvis review`."
+            )
+        lines = [f"Module {module.level}: {module.title}", ""]
+        lines.extend(f"  - {point}" for point in module.teaching)
+        lines.append("")
+        lines.append(f"Quiz ({len(module.quiz)} questions, {module.pass_mark} to pass):")
+        for index, question in enumerate(module.quiz, 1):
+            lines.append(f"  {index}. {question.prompt}")
+            for choice, option in enumerate(question.options):
+                lines.append(f"       {chr(97 + choice)}) {option}")
+        lines.append("")
+        lines.append(f"Answer with: jarvis quiz {module.key} a b c")
+        return "\n".join(lines)
+
+    def submit_quiz(self, module_key: str, answers: Sequence[str]) -> str:
+        module = MODULES_BY_KEY.get(module_key)
+        if module is None:
+            known = ", ".join(m.key for m in CURRICULUM)
+            return f"No module called {module_key!r}. Available: {known}"
+        indices = [
+            (ord(a.strip().lower()[0]) - 97) if a.strip() else -1 for a in answers
+        ]
+        result = self.coach.grade_quiz(module, indices)
+
+        lines = [
+            f"{result['title']}: {result['score']}/{result['out_of']} "
+            f"({'PASSED' if result['passed'] else 'not passed'}, "
+            f"need {result['pass_mark']})",
+            "",
+        ]
+        for item in result["detail"]:
+            mark = "correct" if item["correct"] else "wrong"
+            lines.append(f"  [{mark}] {item['prompt']}")
+            if not item["correct"]:
+                lines.append(f"      you said: {item['your_answer']}")
+                lines.append(f"      answer:   {item['right_answer']}")
+            lines.append(f"      {item['explanation']}")
+        progress = self.coach.progress()
+        lines.append("")
+        lines.append(f"Progress: {progress['passed']}/{progress['total']} modules passed.")
+        if progress["next"]:
+            lines.append(f"Next up: {progress['next']}")
+        return "\n".join(lines)
+
+    def review_trades(self, limit: int = 100) -> str:
+        return self.coach.review_journal(limit=limit).describe()
+
     # --------------------------------------------------------------- learn
     def learn_cycle(self, *, study_web: bool = True) -> dict[str, Any]:
         """One full pass of studying, distilling and grading."""
@@ -515,6 +720,23 @@ class Jarvis:
             return "\n".join(
                 f"[{i['impact']:.2f}] {i['headline']} -- {i['source']}" for i in items
             )
+
+        if any(
+            w in lowered
+            for w in ("day trade", "daytrade", "day trading", "intraday", "scalp")
+        ):
+            if any(w in lowered for w in ("teach", "learn", "train", "how do i", "show me how")):
+                return self.teach()
+            return self.daytrade_briefing()
+
+        if any(w in lowered for w in ("can i trade", "am i allowed", "pdt", "pattern day")):
+            return self.trading_status().describe()
+
+        if any(w in lowered for w in ("review my trades", "how am i trading", "my mistakes", "journal")):
+            return self.review_trades()
+
+        if any(w in lowered for w in ("teach me", "train me", "next lesson", "quiz me")):
+            return self.teach()
 
         if any(w in lowered for w in ("scan", "setups", "signals", "watchlist", "opportunit")):
             recent = self.memory.signals.recent(limit=8, min_confidence=0.5)

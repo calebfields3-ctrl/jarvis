@@ -8,6 +8,7 @@ import pytest
 
 from jarvis.brain import Jarvis
 from jarvis.market.provider import SyntheticProvider
+from jarvis.portfolio.tracker import market_now
 from jarvis.voice.io import PhraseWake, TextListener
 
 
@@ -47,7 +48,7 @@ def test_greeting_includes_previous_day_pnl(jarvis):
     jarvis.portfolio.record_trade("AAPL", "buy", 10, 100.0)
 
     prior = jarvis.portfolio.snapshot(price_lookup=lambda s: {"AAPL": 100.0})
-    jarvis.portfolio.close_day(prior, as_of_date=date.today() - timedelta(days=1))
+    jarvis.portfolio.close_day(prior, as_of_date=market_now().date() - timedelta(days=1))
 
     jarvis.provider = SyntheticProvider(seed=1)
     monkey_price = {"AAPL": 120.0}
@@ -231,3 +232,85 @@ def test_wake_phrase_matching():
     assert not wake.heard_wake("hey google")
     assert not wake.heard_wake("")
     assert not wake.heard_wake(None)
+
+
+# ------------------------------------------------------------- day trading
+def test_daytrade_scan_reports_the_session_clock(jarvis):
+    report = jarvis.daytrade_scan(["AAPL", "MSFT", "NVDA"])
+    assert report.symbols_scanned == 3
+    assert report.status is not None
+    assert any("ET" in note or "closed" in note.lower() for note in report.notes)
+
+
+def test_daytrade_setups_carry_a_sized_plan(jarvis):
+    jarvis.portfolio.record_cash(50_000)
+    briefing = jarvis.daytrade_briefing(
+        jarvis.daytrade_scan(["AAPL", "MSFT", "NVDA", "TSLA", "AMD", "META", "XOM", "JPM"])
+    )
+    assert "Scanned" in briefing
+    if "shares @" in briefing:
+        assert "stop" in briefing and "target" in briefing
+
+
+def test_daytrade_refuses_to_pitch_setups_while_blocked(jarvis):
+    from datetime import datetime, timedelta
+
+    from jarvis.market.session import EASTERN
+
+    jarvis.portfolio.record_cash(20_000)
+    when = datetime.now(tz=EASTERN).replace(hour=10, minute=0)
+    for symbol in ("AAPL", "MSFT", "NVDA"):
+        jarvis.portfolio.record_trade(symbol, "buy", 10, 100.0, executed_at=when)
+        jarvis.portfolio.record_trade(
+            symbol, "sell", 10, 101.0, executed_at=when + timedelta(hours=1)
+        )
+    briefing = jarvis.daytrade_briefing(jarvis.daytrade_scan(["AAPL"]))
+    assert "not going to hand you setups" in briefing
+
+
+def test_plan_trade_uses_live_equity(jarvis):
+    jarvis.portfolio.record_cash(30_000)
+    plan = jarvis.plan_trade("AAPL", "long", 50.0, 48.0, 56.0)
+    assert plan.is_viable
+    assert plan.shares == 75
+
+
+def test_intraday_patterns_start_untested(jarvis):
+    lesson = jarvis.memory.knowledge.lesson_for_pattern("opening_range_breakout")
+    assert lesson is not None
+    assert lesson.tier == "hypothesis"
+    assert lesson.support + lesson.refute == 0
+
+
+# ---------------------------------------------------------------- coaching
+def test_teach_presents_the_first_module(jarvis):
+    lesson = jarvis.teach()
+    assert "What a day trade actually is" in lesson
+    assert "Quiz" in lesson
+
+
+def test_quiz_flow_updates_progress(jarvis):
+    from jarvis.learning.coach import MODULES_BY_KEY
+
+    module = MODULES_BY_KEY["what_is_day_trading"]
+    letters = [chr(97 + q.answer_index) for q in module.quiz]
+    result = jarvis.submit_quiz("what_is_day_trading", letters)
+    assert "PASSED" in result
+    assert jarvis.coach.progress()["passed"] == 1
+
+
+def test_unknown_quiz_module_is_reported(jarvis):
+    assert "No module called" in jarvis.submit_quiz("not_a_module", ["a"])
+
+
+def test_asking_to_be_taught_routes_to_the_coach(jarvis):
+    assert "Quiz" in jarvis.ask("teach me to day trade")
+
+
+def test_asking_about_pdt_routes_to_risk(jarvis):
+    answer = jarvis.ask("can i trade today")
+    assert "PDT" in answer or "day trades" in answer
+
+
+def test_review_routes_to_the_journal(jarvis):
+    assert "No closed round trips" in jarvis.ask("review my trades")

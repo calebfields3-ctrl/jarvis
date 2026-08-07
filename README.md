@@ -187,6 +187,96 @@ Anything merely "probably fine" comes back `unknown` and is **not followed**.
 Set `JARVIS_REQUIRE_SAFE_BROWSING=1` to demand an active Safe Browsing clear
 for every URL, allowlist included.
 
+### Day trading
+Daily bars answer "should I own this for weeks". Day trading is a different
+question on a different clock, so it gets its own engine.
+
+**The clock gates everything.** `jarvis/market/session.py` knows the opening
+drive (09:30-10:00), the morning trend, the midday chop, and power hour, in US
+Eastern with holidays handled. A breakout at 09:45 and the same breakout at
+12:30 are not the same trade, and Jarvis refuses to open a new day trade inside
+the midday window or within 15 minutes of the bell.
+
+**Six intraday detectors**, all VWAP- and opening-range aware: opening range
+breakout/breakdown, VWAP reclaim/rejection, gap-and-go, failed-breakdown
+reversal, momentum surge, power-hour trend. VWAP is anchored per session and
+resets each day; relative volume compares against the *same minute* of prior
+sessions, not a whole-day average.
+
+Every intraday signal carries an entry, a stop and a target. Anything below
+1.5R is dropped before you ever see it — a day trade risking a dollar to make
+eighty cents loses money at a perfectly respectable hit rate.
+
+**Sizing comes from the stop, never from a feeling:**
+
+```
+$ jarvis plan AAPL long 50 48 56
+AAPL LONG 75 shares @ 50.00
+  stop 48.00 | target 56.00 | 3.0R
+  risking $150.00 on $3,750.00 of stock
+```
+
+**The PDT rule is tracked, not discovered the hard way.** Four day trades in
+five rolling business days flags a US margin account and freezes it for 90 days
+under $25,000. Jarvis counts every round trip and blocks you at three:
+
+```
+$ jarvis risk
+Equity $20,030.00 is below the $25,000 PDT minimum. 3 day trades used since
+2026-07-31; 0 left before the rule trips.
+Today: 6 trades, $+30.00 realised, no losing streak.
+STOP TRADING TODAY:
+  - pattern day trader rule: 3 day trades since 2026-07-31 on $20,030.00 equity.
+    You are at the limit -- one more within five business days flags the account
+    and freezes it for 90 days.
+```
+
+Daily loss limit, trade count and consecutive-loss circuit breakers work the
+same way. When you're blocked, `jarvis daytrade` will not show you setups at
+all — handing a tilted trader a watchlist is how the bad day becomes a bad month.
+
+### Training you to day trade
+Seven modules, each gated behind a quiz, progress persisted:
+
+1. What a day trade actually is
+2. The shape of the trading day
+3. Position sizing from the stop
+4. The pattern day trader rule
+5. VWAP and the opening range
+6. The psychology that actually costs money
+7. Measuring whether you actually have an edge
+
+Risk and PDT modules require a perfect score — you don't get to be mostly right
+about the rule that can freeze your account.
+
+```
+$ jarvis train                       # teach the next module + its quiz
+$ jarvis quiz risk_sizing a b c      # answer it
+```
+
+**And then the part that actually changes behaviour** — `jarvis review` reads
+your real closed trades and names what's costing you money, with your own
+numbers:
+
+```
+$ jarvis review
+Reviewed 8 closed trades.
+Win rate 62% | avg win $88.00 | avg loss $733.33 | expectancy $-220.00 per trade
+Expectancy is negative -- as it stands, trading more loses money faster.
+
+!! You are cutting winners and holding losers
+     Average win $88.00 against an average loss of $733.33 (0.12x). At a 62%
+     win rate that is not sustainable.
+     -> Set the target and stop before entry and let both work.
+ ! A lot of your entries land in the midday chop
+     4 of 8 timed entries fell between 12:00 and 14:00 ET.
+```
+
+It detects: cutting winners while holding losers, revenge sizing (scoped to
+*within* a session — sizing up the next morning is a strategy call, not a
+reflex), overnight drift on intended day trades, midday entries, overtrading,
+and insufficient sample size.
+
 ### Voice
 Wake word falls back in a defined order: Picovoice Porcupine (ships a built-in
 "jarvis" keyword, fully on-device) → continuous speech recognition matching the
@@ -204,6 +294,12 @@ they just type.
 | `jarvis wake` | Print the greeting once |
 | `jarvis ask "..."` | One question |
 | `jarvis scan [SYMBOLS]` | Sweep the watchlist for setups |
+| `jarvis daytrade` | Intraday setups with sizing and risk checks |
+| `jarvis plan SYM long E S T` | Size a trade from its stop |
+| `jarvis risk` | PDT rule and today's circuit breakers |
+| `jarvis train [module]` | Day-trading curriculum |
+| `jarvis quiz MODULE a b c` | Answer a module's quiz |
+| `jarvis review` | Coach's review of your real trades |
 | `jarvis bootstrap` | Replay history to build a measured track record |
 | `jarvis know` | Everything learned, and the pattern scoreboard |
 | `jarvis learn` | One study + grading cycle |
@@ -248,14 +344,16 @@ Editable data files:
 ## Tests
 
 ```bash
-pytest -q      # 131 tests, ~3s, no network required
+pytest -q      # 214 tests, ~6s, no network required
 ```
 
 Coverage includes portfolio arithmetic (average cost, realised P/L, day-over-day
 P/L), indicator correctness, every detector against hand-built bar sequences,
 the safety gate's verdicts, trader vetting including scam disqualification, the
 reinforcement loop (promotion, retirement, foundations never retiring), news
-scoring and feed parsing, and memory surviving restarts.
+scoring and feed parsing, memory surviving restarts, the session clock and
+intraday detectors, position sizing and the PDT rule, and every coaching
+diagnosis against synthetic bad habits.
 
 ---
 
@@ -265,6 +363,19 @@ scoring and feed parsing, and memory surviving restarts.
 integration and no order placement anywhere in the codebase. Every execution
 decision is yours. Its output is decision support, not advice, and it says so
 on every symbol briefing.
+
+**Day trading is the hardest way to make money in markets.** The consistent
+finding across regulator and academic studies is that most day traders lose,
+and that losses concentrate among those trading most actively. Jarvis is built
+to respect that: it caps position size, blocks you at your limits, refuses to
+show setups when you're tilted, and reports negative expectancy plainly rather
+than finding an encouraging way to phrase it. None of that makes day trading
+safe. It makes the risks visible.
+
+**The PDT rule here is US equities.** Thresholds and the definition of a day
+trade differ by broker and jurisdiction; the $25,000 minimum and the
+four-trades-in-five-business-days window are FINRA rules for US margin
+accounts. Check your own broker's terms before relying on the count.
 
 **The curated source list ships without individual traders.** Vouching that a
 specific person is a proven, successful trader is a factual claim about a real

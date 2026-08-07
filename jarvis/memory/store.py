@@ -521,6 +521,50 @@ class NewsStore:
         return [dict(r) for r in rows]
 
 
+# -------------------------------------------------------------------- training
+class TrainingStore:
+    """Caleb's progress through the day-trading curriculum."""
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    def record_attempt(
+        self, module_key: str, score: int, out_of: int, passed: bool
+    ) -> int:
+        return self.db.execute(
+            "INSERT INTO training_attempts(module_key, score, out_of, passed) "
+            "VALUES (?, ?, ?, ?)",
+            (module_key, score, out_of, 1 if passed else 0),
+        )
+
+    def passed_modules(self) -> set[str]:
+        """Modules passed at least once. A pass is not lost by a later bad attempt."""
+        rows = self.db.query(
+            "SELECT DISTINCT module_key FROM training_attempts WHERE passed = 1"
+        )
+        return {r["module_key"] for r in rows}
+
+    def attempts(self, module_key: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM training_attempts"
+        params: tuple = ()
+        if module_key:
+            sql += " WHERE module_key = ?"
+            params = (module_key,)
+        sql += " ORDER BY id DESC LIMIT ?"
+        rows = self.db.query(sql, params + (limit,))
+        return [dict(r) for r in rows]
+
+    def best_score(self, module_key: str) -> tuple[int, int] | None:
+        row = self.db.query_one(
+            "SELECT MAX(score) AS best, out_of FROM training_attempts "
+            "WHERE module_key = ?",
+            (module_key,),
+        )
+        if row is None or row["best"] is None:
+            return None
+        return int(row["best"]), int(row["out_of"])
+
+
 # ------------------------------------------------------------------- container
 class Memory:
     """Everything Jarvis remembers, in one handle."""
@@ -532,6 +576,7 @@ class Memory:
         self.knowledge = KnowledgeStore(self.db)
         self.signals = SignalStore(self.db)
         self.news = NewsStore(self.db)
+        self.training = TrainingStore(self.db)
 
     def close(self) -> None:
         self.db.close()

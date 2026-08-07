@@ -101,9 +101,22 @@ def seed_pattern_hypotheses(knowledge_store) -> int:
     that a golden cross is bullish; it has not yet seen whether that is true in
     the markets it actually watches. Its own graded outcomes decide.
     """
+    from ..market.intraday import INTRADAY_PATTERN_KEYS
     from ..market.patterns import PATTERN_KEYS
 
     descriptions = {
+        # intraday -- day trading setups, on the same evidential footing
+        "opening_range_breakout": "A break above the first 30 minutes' high tends to continue for the session.",
+        "opening_range_breakdown": "A break below the first 30 minutes' low tends to continue for the session.",
+        "vwap_reclaim": "Reclaiming VWAP after trading below it tends to lead to further upside.",
+        "vwap_rejection": "Failing at VWAP from below tends to lead to further downside.",
+        "gap_and_go_long": "A stock that gaps up and makes session highs early tends to keep running.",
+        "gap_and_go_short": "A stock that gaps down and makes session lows early tends to keep falling.",
+        "failed_breakdown_reversal": "Undercutting the session low and reclaiming it traps shorts and tends to squeeze.",
+        "momentum_surge_long": "A high-volume upside thrust tends to see continuation within the session.",
+        "momentum_surge_short": "A high-volume downside thrust tends to see continuation within the session.",
+        "power_hour_trend_long": "Holding above VWAP at session highs after 15:00 tends to close strong.",
+        "power_hour_trend_short": "Pinned below VWAP at session lows after 15:00 tends to close weak.",
         "golden_cross": "A 50-day crossing above the 200-day tends to precede continued strength.",
         "death_cross": "A 50-day crossing below the 200-day tends to precede continued weakness.",
         "rsi_oversold_reversal": "Price turning up out of RSI oversold tends to bounce over the next week.",
@@ -131,6 +144,16 @@ def seed_pattern_hypotheses(knowledge_store) -> int:
             pattern_key=key,
             tier="hypothesis",
             confidence=0.5,   # a coin flip until the outcomes say otherwise
+        )
+        count += 1
+    for key in INTRADAY_PATTERN_KEYS:
+        knowledge_store.add_lesson(
+            topic="intraday",
+            claim=descriptions.get(key, f"The {key} intraday setup has predictive value."),
+            kind="pattern",
+            pattern_key=key,
+            tier="hypothesis",
+            confidence=0.5,
         )
         count += 1
     return count
