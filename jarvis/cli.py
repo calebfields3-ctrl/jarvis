@@ -103,6 +103,19 @@ class BackgroundMonitors:
 
 
 # --------------------------------------------------------------- subcommands
+def cmd_start(args, jarvis: Jarvis) -> int:
+    """The whole thing: window, wake word, and a real mind behind it."""
+    from jarvis.app import JarvisApp
+
+    JarvisApp(
+        jarvis.config,
+        jarvis=jarvis,
+        use_hud=not getattr(args, "no_window", False),
+        use_voice=not getattr(args, "no_voice", False),
+    ).run()
+    return 0
+
+
 def cmd_run(args, jarvis: Jarvis) -> int:
     channel = VoiceChannel(jarvis.config)
     print(BANNER)
@@ -355,7 +368,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", "-v", action="store_true", help="debug logging")
     sub = parser.add_subparsers(dest="command")
 
-    run = sub.add_parser("run", help="wake-word loop with background monitoring")
+    start = sub.add_parser("start", help="the window, the wake word, everything (default)")
+    start.add_argument("--no-window", action="store_true", help="stay in the terminal")
+    start.add_argument("--no-voice", action="store_true", help="don't listen on the microphone")
+    start.set_defaults(func=cmd_start)
+
+    run = sub.add_parser("run", help="the older text-only wake-word loop")
     run.add_argument("--no-monitors", action="store_true", help="skip background loops")
     run.set_defaults(func=cmd_run)
 
@@ -477,8 +495,9 @@ def main(argv: list[str] | None = None) -> int:
     quiet_yfinance(not args.verbose)
 
     if not getattr(args, "func", None):
-        parser.print_help()
-        return 1
+        # Bare `jarvis` opens the real thing rather than printing help. He
+        # asked not to have to remember a command to summon him.
+        args.func = cmd_start
 
     config = get_config()
     if args.persona:
