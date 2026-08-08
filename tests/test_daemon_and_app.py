@@ -499,3 +499,80 @@ def test_voice_can_still_be_turned_off(home, monkeypatch):
 
     monkeypatch.setenv("JARVIS_VOICE", "0")
     assert Config().voice_enabled is False
+
+
+# ---------------------------------------------------- the terminal is the home
+
+
+def test_the_terminal_is_the_default_not_the_window():
+    """He asked to stay in the terminal. `jarvis` must not open a window."""
+    from jarvis.cli import build_parser
+
+    args = build_parser().parse_args(["start"])
+    assert args.window is False
+
+
+def test_the_window_is_still_available_to_anyone_who_wants_it():
+    from jarvis.cli import build_parser
+
+    assert build_parser().parse_args(["start", "--window"]).window is True
+
+
+def test_bare_jarvis_starts_him_rather_than_printing_help(monkeypatch, home):
+    """He asked not to have to remember a command to summon him."""
+    import jarvis.cli as cli
+
+    started = []
+    monkeypatch.setattr(cli, "cmd_start", lambda args, jarvis: started.append(True) or 0)
+    monkeypatch.setattr(cli, "Jarvis", lambda *a, **k: FakeJarvis())
+    monkeypatch.setattr(FakeJarvis, "memory", FakeMemory(), raising=False)
+    monkeypatch.setattr(FakeMemory, "close", lambda self: None, raising=False)
+
+    assert cli.main([]) == 0
+    assert started == [True]
+
+
+def test_voice_can_be_turned_off_from_the_command_line():
+    from jarvis.cli import build_parser
+
+    assert build_parser().parse_args(["start", "--no-voice"]).no_voice is True
+
+
+def test_in_the_terminal_he_speaks_and_prints(app, capsys):
+    """Talking to him has to work without a window in the way."""
+    app.hud = None
+    app.voice = FakeVoice()
+    app._speak("Morning, sir.")
+
+    assert app.voice.spoken == ["Morning, sir."]
+    assert "Morning, sir." in capsys.readouterr().out
+
+
+def test_the_wake_word_works_with_no_window(app, capsys):
+    app.hud = None
+    app.voice = FakeVoice("what's my portfolio")
+    app._woken()
+
+    assert app._jarvis.asked == ["what's my portfolio"]
+    assert "What can I do for you" in app.voice.spoken[0]
+
+
+def test_nothing_is_hidden_when_there_is_no_window(app):
+    """`_idle` must not try to dismiss a window that does not exist."""
+    app.hud = None
+    app.voice = FakeVoice()
+    app._idle(delay=0.0)  # must not raise
+    assert app.hud is None
+
+
+def test_you_can_see_what_he_touches_from_the_terminal(app, capsys):
+    """With a shell and no window, this is the only live visibility there is."""
+    import types
+
+    app.hud = None
+    app._show_tool_call(types.SimpleNamespace(name="run_command", summary="rm notes.txt", ok=True))
+    app._show_tool_call(types.SimpleNamespace(name="read_file", summary="/etc/shadow", ok=False))
+
+    out = capsys.readouterr().out
+    assert "run_command" in out and "rm notes.txt" in out
+    assert "×" in out, "a refused call should look different from an allowed one"

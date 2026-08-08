@@ -1,30 +1,31 @@
 # Jarvis
 
-A self-learning AI trading assistant with a real mind, real control of its own
-machine, and a face. Say "hey Jarvis" and he's there — no command to type, no
-window to find. He greets Caleb by name, opens with the portfolio and the
-previous day's P/L, and remembers everything across sessions. He starts with
-foundational trading knowledge and builds real expertise by studying curated
-sources — then grades himself against what the market actually did.
+A self-learning AI trading assistant with a real mind and real control of its
+own machine. He lives in your terminal, answers to "hey Jarvis" out loud,
+greets Caleb by name, opens with the portfolio and the previous day's P/L, and
+remembers everything across sessions. He starts with foundational trading
+knowledge and builds real expertise by studying curated sources — then grades
+himself against what the market actually did.
 
 ```
 $ jarvis
 ```
 
-Nothing appears. He's listening.
+He starts in your terminal and says he's listening.
 
-Say **"hey Jarvis"** and the window comes up in front of whatever you're doing,
-a glowing ring in the middle, and he answers out loud. The first summons of each
-day also brings the morning rundown unasked — portfolio, overnight news,
-standing watches, whether you're clear to day trade. Every summons after that is
-one line, because a briefing you hear twenty times a day stops being a briefing.
+Say **"hey Jarvis"** and he answers out loud. The first summons of each day also
+brings the morning rundown unasked — portfolio, overnight news, standing
+watches, whether you're clear to day trade. Every summons after that is one
+line, because a briefing you hear twenty times a day stops being a briefing.
+Typing at the prompt works the whole time; talking and typing are both always
+open.
 
-Say "goodbye" and it tucks itself away; it also goes on its own after a minute
-of quiet. He keeps listening either way.
+Every tool call prints as it happens, so you can watch a thing with a shell do
+its work rather than reading about it afterwards in the log.
 
-The ring is the interface: brighter and faster when he's listening, ticking over
-while he works, pulsing when he speaks, amber when he needs your say-so. Type in
-the box at the bottom if you'd rather not talk.
+There's a HUD too — `jarvis start --window` — a dark window with an arc reactor
+that brightens when he listens and pulses when he speaks. It's optional. The
+terminal is home.
 
 Behind it, Claude Opus 5 holds seventeen tools — a shell, the filesystem, a
 browser, and everything below. Every one of them goes through a permission
@@ -154,9 +155,8 @@ dollars a month covers normal use.
 
 Everything degrades gracefully. No API key and he falls back to the built-in
 router — less capable, still useful, and it's also what runs when the network
-is down. No `python3-tk` and he runs in the terminal instead of a window. No
-microphone packages and you type instead of talking. Each step down is
-announced once, in a sentence.
+is down. No microphone packages and you type instead of talking. Each step down
+is announced once, in a sentence.
 
 ```bash
 jarvis status        # what's configured, what isn't
@@ -173,7 +173,7 @@ jarvis buy AAPL 100 182.30
 jarvis buy NVDA 50 118.75
 
 jarvis bootstrap          # replay 2 years of history to build a track record
-jarvis                    # the real thing: window, wake word, mind
+jarvis                    # the real thing: terminal, wake word, mind
 ```
 
 `jarvis bootstrap` matters. Without it, every pattern is an untested hypothesis
@@ -441,8 +441,9 @@ they just type.
 
 | Command | What it does |
 |---|---|
-| `jarvis` | **The whole thing** — window, wake word, and the full agent |
-| `jarvis start --no-window` | Same, but in the terminal |
+| `jarvis` | **The whole thing** — wake word and the full agent, in your terminal |
+| `jarvis start --window` | Same, plus the arc-reactor HUD |
+| `jarvis start --no-voice` | Same, typing only |
 | `jarvis run` | The older text-only wake-word loop, with background monitoring |
 | `jarvis wake` | Print the greeting once |
 | `jarvis ask "..."` | One question |

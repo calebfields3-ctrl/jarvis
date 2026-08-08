@@ -74,8 +74,8 @@ sudo apt update && sudo apt install -y git python3 python3-venv python3-pip pyth
   blinking cursor.
 
 > `sudo` means "do this as the administrator". `apt` is how Linux installs
-> programs. You're installing git (to download code), Python (the language
-> Jarvis is written in), and the toolkit that draws his window.
+> programs. You're installing git (to download code) and Python (the language
+> Jarvis is written in).
 
 ---
 
@@ -139,11 +139,11 @@ there so it can never surprise you.
 jarvis
 ```
 
-That's the whole command. Nothing appears — he's listening in the background.
+That's the whole command. He starts up in the Terminal and tells you he's
+listening.
 
-**Now say "hey Jarvis" out loud.** The window pops up in front of whatever
-you're doing, a glowing ring in the middle, and he answers: *"Hello, sir. What
-can I do for you?"*
+**Now say "hey Jarvis" out loud.** He answers back, out loud:
+*"Hello, sir. What can I do for you?"*
 
 **The first time each day** he also gives you the morning rundown without being
 asked — your portfolio, what moved overnight, anything he's watching, and
@@ -161,25 +161,30 @@ teach me to day trade
 can I trade today
 ```
 
-You can also type in the box at the bottom if you'd rather not talk.
+You can also just type at the `>` prompt any time — talking and typing both
+work, always.
 
-When you're done, say **"goodbye"** (or "thanks", or "never mind") and the
-window tucks itself away. It also goes away on its own after about a minute of
-quiet. He's still listening either way — say "hey Jarvis" and he's back.
+**You'll see what he does.** Every time he touches your computer it prints a
+line, like `· run_command  du -sh ~/Downloads`. That's him working, live.
 
 **When he wants to do something that could break things** — delete a file,
-install something — the ring turns amber and a box asks you first. Nothing
-destructive happens without you clicking yes. A few things he won't do at all,
-even if you say yes, and he'll tell you which.
+install something — he stops and asks:
 
-To shut him down completely, close the window.
+```
+  Jarvis wants to: run: rm old-notes.txt
+  'rm' can delete, install, or reach the network
+  Allow it? [y/N]
+```
 
-> **If no window appears** and it stays in the terminal, the toolkit is
-> missing. Run `sudo apt install -y python3-tk` and start him again.
+Type `y` and Enter to allow it. Anything else means no. A few things he won't
+do at all even if you say yes, and he'll tell you which.
 
-> **If "hey Jarvis" does nothing**, the microphone packages aren't installed.
-> Run `pip install 'jarvis-trading-assistant[voice]'` inside the venv, or just
-> type to him — everything works either way.
+To stop him, hold **Ctrl + C**.
+
+> **If "hey Jarvis" does nothing**, two things to check. First, ChromeOS has
+> to give Linux the microphone: **Settings → Linux → Microphone**, turn it on,
+> then restart Linux. Second, run `./setup.sh` again — it installs the
+> microphone packages and tells you if they failed. Typing works regardless.
 
 ---
 
@@ -244,9 +249,6 @@ works; the numbers just aren't real. Check your Wi-Fi.
 
 **Every setup says "untested"**
 Run `jarvis bootstrap`.
-
-**No window opens — it stays in the terminal**
-`sudo apt install -y python3-tk`, then start him again.
 
 **"hey Jarvis" doesn't do anything**
 The microphone packages aren't installed, or ChromeOS hasn't given the Linux

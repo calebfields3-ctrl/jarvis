@@ -245,8 +245,18 @@ class JarvisApp:
         return self.jarvis.ask(text)
 
     def _show_tool_call(self, call) -> None:
+        """Show what he's touching, as he touches it.
+
+        In the terminal this is the only visibility Caleb has into a thing
+        with a shell. Watching it work is how you notice it doing something
+        you did not mean, and noticing has to be possible in the moment
+        rather than afterwards in the audit log.
+        """
         if self.hud is not None:
             self.hud.tool_call(call)
+            return
+        mark = "·" if call.ok else "×"
+        print(f"    {mark} {call.name}  {call.summary}")
 
     def _ask_in_terminal(self, action: str, decision) -> bool:
         """Approval with no window. Anything but an explicit yes is a no."""
@@ -268,7 +278,7 @@ class JarvisApp:
         self._start_voice()
 
         if self.hud is None:
-            self._run_terminal(self.jarvis.wake(channel="text"))
+            self._run_terminal()
             return
 
         # The window has to own the main thread -- tkinter will not run
@@ -291,16 +301,32 @@ class JarvisApp:
         finally:
             self._shutdown()
 
-    def _run_terminal(self, greeting: str) -> None:
+    def _run_terminal(self) -> None:
+        """The terminal is the home. Voice on top of it, not instead of it.
+
+        Typing keeps working the whole time the microphone is live -- the
+        wake word answers on a background thread, so both routes are open and
+        neither blocks the other.
+        """
         for note in self._notes:
             print(f"  {note}\n")
-        print(f"\n{greeting}\n")
+
+        if self.voice is not None:
+            # The greeting belongs to the first "hey Jarvis", not to startup.
+            # Printing it here means he says it twice.
+            print(
+                f'\n  Listening. Say "{self.config.wake_phrase}" -- '
+                "or just type to me here.\n  Ctrl-C to stop.\n"
+            )
+        else:
+            print(f"\n{self.jarvis.wake(channel='text')}\n")
+
         try:
             while True:
                 text = input("> ").strip()
                 if not text:
                     continue
-                if text.lower() in {"goodbye", "exit", "quit"}:
+                if text.lower() in {"exit", "quit"}:
                     break
                 self._handle(text)
         except (EOFError, KeyboardInterrupt):

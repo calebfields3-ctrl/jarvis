@@ -110,7 +110,9 @@ def cmd_start(args, jarvis: Jarvis) -> int:
     JarvisApp(
         jarvis.config,
         jarvis=jarvis,
-        use_hud=not getattr(args, "no_window", False),
+        # The terminal is where he lives. The window is there for anyone who
+        # wants it, but it is not what you get by default.
+        use_hud=getattr(args, "window", False),
         use_voice=not getattr(args, "no_voice", False),
     ).run()
     return 0
@@ -368,8 +370,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", "-v", action="store_true", help="debug logging")
     sub = parser.add_subparsers(dest="command")
 
-    start = sub.add_parser("start", help="the window, the wake word, everything (default)")
-    start.add_argument("--no-window", action="store_true", help="stay in the terminal")
+    start = sub.add_parser("start", help="the wake word and the full agent, in this terminal (default)")
+    start.add_argument("--window", action="store_true", help="open the HUD window instead")
     start.add_argument("--no-voice", action="store_true", help="don't listen on the microphone")
     start.set_defaults(func=cmd_start)
 
