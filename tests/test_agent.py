@@ -496,3 +496,47 @@ def test_no_api_key_means_no_mind_rather_than_a_crash(engine, monkeypatch):
 def test_the_cost_estimate_uses_opus_5_pricing():
     assert Reply("x", input_tokens=1_000_000).cost_estimate == pytest.approx(5.0)
     assert Reply("x", output_tokens=1_000_000).cost_estimate == pytest.approx(25.0)
+
+
+# ------------------------------------------------------------- server tools
+
+
+def test_he_can_reach_the_web_without_any_google_keys(engine):
+    """`search_web` needs Programmable Search keys almost nobody has.
+
+    Without the server tools he'd be a research assistant who can't reach the
+    internet.
+    """
+    client = FakeClient(FakeRunner([FakeMessage([text_block("hi")])]))
+    brain(client, engine).say("what happened to NVDA today")
+
+    types_sent = {
+        t.get("type") for t in client.calls[0]["tools"] if isinstance(t, dict)
+    }
+    assert "web_search_20260209" in types_sent
+    assert "web_fetch_20260209" in types_sent
+
+
+def test_the_server_tools_are_the_versions_with_dynamic_filtering(engine):
+    """The 20250305 versions still work but filter nothing before context."""
+    from jarvis.agent.brain import SERVER_TOOLS
+
+    for tool in SERVER_TOOLS:
+        assert tool["type"].endswith("20260209")
+
+
+def test_his_own_tools_are_still_there_alongside_them(engine):
+    client = FakeClient(FakeRunner([FakeMessage([text_block("hi")])]))
+    brain(client, engine).say("hello")
+
+    names = {
+        t.to_dict()["name"] for t in client.calls[0]["tools"] if hasattr(t, "to_dict")
+    }
+    assert "run_command" in names and "portfolio" in names
+
+
+def test_the_web_tools_can_be_left_off(engine):
+    client = FakeClient(FakeRunner([FakeMessage([text_block("hi")])]))
+    AgentBrain(ToolBox(engine), client=client, web_tools=False).say("hello")
+
+    assert not any(isinstance(t, dict) for t in client.calls[0]["tools"])

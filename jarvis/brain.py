@@ -207,13 +207,22 @@ class Jarvis:
             self.session_id = self.memory.sessions.start(channel="voice")
 
         name = self.memory.profile.name
+        study = self._study_report()
+
         if not self.first_time_today():
             line = self.voice.summoned(name)
+            # What he learned while out is worth saying even on a short
+            # greeting -- it's the answer to "did you actually do it", and
+            # sitting on it until tomorrow morning makes it worthless.
+            if study:
+                line = f"{line}\n\n{study}"
             self.memory.sessions.record(self.session_id, "jarvis", line)
             return line
 
         self.memory.profile.set("last_briefing_day", self._market_day())
         lines = [self.voice.greeting_open(self._greeting_context()), ""]
+        if study:
+            lines.extend([study, ""])
         try:
             lines.extend(self.premarket_brief().splitlines())
         except Exception as exc:
@@ -223,6 +232,20 @@ class Jarvis:
         briefing = "\n".join(lines)
         self.memory.sessions.record(self.session_id, "jarvis", briefing)
         return briefing
+
+    def _study_report(self) -> str:
+        """What the background studying found, said once and then forgotten.
+
+        Cleared after reporting so the same session isn't announced every
+        time he's spoken to for the rest of the week.
+        """
+        from .learning.deepstudy import clear_progress, describe_progress, load_progress
+
+        progress = load_progress(self.memory)
+        if progress is None or not progress.cycles:
+            return ""
+        clear_progress(self.memory)
+        return describe_progress(progress)
 
     @staticmethod
     def _market_day() -> str:

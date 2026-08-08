@@ -82,6 +82,9 @@ class ToolBox:
         self.approve = approver or always_deny
         self.on_call = on_call
         self.calls: list[ToolCall] = []
+        # The background study session, if one is running. Held here rather
+        # than on the agent so it survives the conversation being reset.
+        self._study = None
 
     # ----------------------------------------------------------- the gate
     def _gate(self, decision: Decision, action: str) -> str | None:
@@ -488,6 +491,71 @@ class ToolBox:
                 return f"The learning run failed: {exc}"
 
         @beta_tool
+        def study_while_away(topic: str = "", hours: float = 2.0) -> str:
+            """Keep studying in the background after Caleb walks away.
+
+            Use this when he says he's leaving and wants you to keep working
+            -- "I'm out for a few hours, go learn about the market". It starts
+            and returns immediately; the studying carries on behind you, so
+            say goodbye properly rather than waiting.
+
+            It reads and grades continuously: articles, video transcripts from
+            the curated traders, the news wire, and its own past calls against
+            what the market actually did. It stops at the deadline on its own.
+            Tell him roughly when you'll stop.
+
+            Args:
+                topic: What to concentrate on, e.g. "options flow" or
+                    "opening range breakouts". Leave empty to work on
+                    whatever the biggest gaps are.
+                hours: How long to keep going. Capped at 12.
+            """
+            from jarvis.learning.deepstudy import StudySession
+
+            if box._study is not None and box._study.running:
+                return (
+                    "I'm already studying "
+                    f"{box._study.topic or 'my own gaps'}. Stop that one first "
+                    "if you want me on something else."
+                )
+
+            box._study = StudySession(box.jarvis, topic=topic, hours=hours)
+            box._study.start()
+            box._record(ToolCall(
+                "study_while_away", f"{topic or 'own gaps'} for {hours}h", Risk.SAFE, True,
+            ))
+            focus = f"on {topic}" if topic else "on whatever I'm weakest at"
+            return (
+                f"Studying {focus}, for up to {box._study.hours:g} hours. "
+                "I'll tell you what I found when you're back."
+            )
+
+        @beta_tool
+        def study_progress() -> str:
+            """What the background studying has turned up, running or finished.
+
+            Call this when Caleb comes back and asks what you learned, or when
+            he wants to know how it's going.
+            """
+            from jarvis.learning.deepstudy import describe_progress, load_progress
+
+            if box._study is not None:
+                return box._study.describe()
+            progress = load_progress(box.jarvis.memory)
+            if progress is None:
+                return "I haven't studied on my own yet."
+            return describe_progress(progress)
+
+        @beta_tool
+        def stop_studying() -> str:
+            """Stop the background studying now, before its deadline."""
+            if box._study is None or not box._study.running:
+                return "I'm not studying at the moment."
+            box._study.stop("you asked me to stop")
+            box._record(ToolCall("stop_studying", "stopped", Risk.SAFE, True))
+            return box._study.describe()
+
+        @beta_tool
         def remember(fact: str, key: str = "") -> str:
             """Store something about Caleb that should survive this session.
 
@@ -537,7 +605,9 @@ class ToolBox:
             open_in_browser, search_web,
             portfolio, scan_for_setups, symbol_report, size_a_trade,
             trading_rules_check, record_trade,
-            what_i_know, study, remember, recall, audit_trail,
+            what_i_know, study,
+            study_while_away, study_progress, stop_studying,
+            remember, recall, audit_trail,
         ]
 
     # ------------------------------------------------------------- helpers

@@ -49,6 +49,20 @@ MAX_PAUSE_RESTARTS = 5
 # whole user/assistant pairs so a tool_use never loses its tool_result.
 MAX_HISTORY_TURNS = 40
 
+# Anthropic-hosted search and page fetching. These matter more than they look:
+# Jarvis's own `search_web` needs Google Programmable Search keys, which almost
+# nobody has, so without these he is a research assistant who cannot reach the
+# internet. These need no keys at all beyond the API key already required.
+#
+# They do not pass through `jarvis.safety.url_safety` -- the fetching happens on
+# Anthropic's servers, not here. That gate still guards every URL *this* machine
+# opens, which is the one that matters, since a page Jarvis merely reads cannot
+# run anything and a page opened in Caleb's browser can.
+SERVER_TOOLS: tuple[dict[str, str], ...] = (
+    {"type": "web_search_20260209", "name": "web_search"},
+    {"type": "web_fetch_20260209", "name": "web_fetch"},
+)
+
 
 class NoMindAvailable(RuntimeError):
     """No API key, or no anthropic package. Jarvis falls back to the router."""
@@ -87,6 +101,7 @@ class AgentBrain:
         api_key: str | None = None,
         on_text: Callable[[str], None] | None = None,
         client: Any = None,
+        web_tools: bool = True,
     ) -> None:
         self.toolbox = toolbox
         self.jarvis = jarvis
@@ -113,7 +128,9 @@ class AgentBrain:
                 ) from exc
             self.client = anthropic.Anthropic(api_key=key)
 
-        self.tools = toolbox.build()
+        # Server tools are plain dicts alongside the decorated functions; the
+        # runner passes them through and Anthropic executes them.
+        self.tools = [*toolbox.build(), *SERVER_TOOLS] if web_tools else toolbox.build()
         self.system = self._build_system()
 
     # ------------------------------------------------------------- context
