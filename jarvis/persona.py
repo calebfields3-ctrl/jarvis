@@ -44,10 +44,21 @@ class Persona:
     key = "plain"
     address = ""
 
-    def __init__(self, *, seed: int | None = None, address: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        seed: int | None = None,
+        address: str | None = None,
+        use_name: bool = False,
+    ) -> None:
         self._rng = random.Random(seed) if seed is not None else random.Random()
         if address is not None:
             self.address = address
+        # Off by default. Text-to-speech mangles a lot of real names, and a
+        # name said wrong every single time is worse than not being named --
+        # it is a small irritation you cannot stop noticing. Turn it back on
+        # with JARVIS_USE_NAME=1 once it sounds right.
+        self.use_name = use_name
 
     # -- small helpers ---------------------------------------------------
     def _pick(self, options: Sequence[str]) -> str:
@@ -57,6 +68,22 @@ class Persona:
     def _sir(self) -> str:
         """', sir' when the persona uses an honorific, else nothing."""
         return f", {self.address}" if self.address else ""
+
+    def _you(self, name: str) -> str:
+        """What he calls him out loud: the honorific, or his actual name.
+
+        Everything user-facing goes through here rather than interpolating
+        ``name`` directly, so the choice is made in one place instead of
+        eleven.
+        """
+        if self.use_name and name:
+            return name
+        return self.address or name or "you"
+
+    def _You(self, name: str) -> str:
+        """The same, capitalised for the start of a sentence."""
+        spoken = self._you(name)
+        return spoken[:1].upper() + spoken[1:]
 
     @staticmethod
     def money(value: float, *, signed: bool = False) -> str:
@@ -77,7 +104,7 @@ class Persona:
             part = "Good afternoon"
         else:
             part = "Good evening"
-        return f"{part}, {ctx.name}. Jarvis online."
+        return f"{part}, {self._you(ctx.name)}. Jarvis online."
 
     def greeting_gap(self, ctx: GreetingContext) -> str | None:
         if ctx.first_session:
@@ -98,7 +125,7 @@ class Persona:
         short and it has to be instant -- a pause here reads as the wake word
         not working, and Caleb says it again.
         """
-        return f"Yes, {name}?"
+        return f"Yes, {self._you(name)}?"
 
     def dismissed(self) -> str:
         return "Standing by."
@@ -250,8 +277,8 @@ class JarvisPersona(Persona):
         # is the point of having him at all.
         if ctx.hour < 5:
             return self._pick((
-                f"You're up early, {ctx.name}. Or late. I've stopped guessing.",
-                f"Good morning, {ctx.name}, though the hour hardly earns the word.",
+                f"You're up early, {self._you(ctx.name)}. Or late. I've stopped guessing.",
+                f"Good morning, {self._you(ctx.name)}, though the hour hardly earns the word.",
             ))
         if ctx.hour < 12:
             part = "Good morning"
@@ -259,7 +286,7 @@ class JarvisPersona(Persona):
             part = "Good afternoon"
         else:
             part = "Good evening"
-        return f"{part}, {ctx.name}."
+        return f"{part}, {self._you(ctx.name)}."
 
     def greeting_gap(self, ctx: GreetingContext) -> str | None:
         if ctx.first_session:
@@ -300,12 +327,12 @@ class JarvisPersona(Persona):
         # of having him; a butler who says nothing but "sir" sounds like a
         # phone menu. Roughly half of these use it.
         return self._pick((
-            f"Hello, {name}. What can I do for you?",
-            f"{name}. How can I help?",
+            f"Hello, {self._you(name)}. What can I do for you?",
+            f"{self._You(name)}. How can I help?",
             f"Yes{self._sir}?",
             f"At your service{self._sir}.",
             f"Hello{self._sir}. What do you need?",
-            f"I'm here, {name}. What is it?",
+            f"I'm here, {self._you(name)}. What is it?",
         ))
 
     def dismissed(self) -> str:
@@ -481,7 +508,7 @@ PERSONAS: dict[str, type[Persona]] = {
 
 
 def build_persona(key: str = "jarvis", *, seed: int | None = None,
-                  address: str | None = None) -> Persona:
+                  address: str | None = None, use_name: bool = False) -> Persona:
     """Pick a persona by name, falling back to the butler."""
     cls = PERSONAS.get((key or "").strip().lower(), JarvisPersona)
-    return cls(seed=seed, address=address)
+    return cls(seed=seed, address=address, use_name=use_name)

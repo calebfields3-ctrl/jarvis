@@ -194,6 +194,9 @@ class FakeProfile:
 class FakeMemory:
     profile = FakeProfile()
 
+    def __init__(self):
+        self.profile = FakeProfile()
+
 
 class FakeJarvis:
     def __init__(self, first_today=False):
@@ -203,6 +206,7 @@ class FakeJarvis:
         self._first_today = first_today
         self.voice = FakeVoicePersona()
         self.memory = FakeMemory()
+        self.spoken_name = "sir"
 
     def wake(self, channel="text"):
         return "Morning, Caleb."
@@ -504,18 +508,28 @@ def test_voice_can_still_be_turned_off(home, monkeypatch):
 # ---------------------------------------------------- the terminal is the home
 
 
-def test_the_terminal_is_the_default_not_the_window():
-    """He asked to stay in the terminal. `jarvis` must not open a window."""
+def test_the_window_pops_up_by_default(home):
+    """He asked for it to appear on screen when he says the wake word."""
+    from jarvis.config import Config
+
+    assert Config().window is True
+
+
+def test_the_terminal_is_one_flag_away(home, monkeypatch):
+    from jarvis.cli import build_parser
+    from jarvis.config import Config
+
+    assert build_parser().parse_args(["start", "--no-window"]).no_window is True
+
+    monkeypatch.setenv("JARVIS_WINDOW", "0")
+    assert Config().window is False
+
+
+def test_both_window_flags_parse():
     from jarvis.cli import build_parser
 
-    args = build_parser().parse_args(["start"])
-    assert args.window is False
-
-
-def test_the_window_is_still_available_to_anyone_who_wants_it():
-    from jarvis.cli import build_parser
-
-    assert build_parser().parse_args(["start", "--window"]).window is True
+    args = build_parser().parse_args(["start", "--window"])
+    assert args.window is True and args.no_window is False
 
 
 def test_bare_jarvis_starts_him_rather_than_printing_help(monkeypatch, home):

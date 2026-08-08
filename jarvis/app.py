@@ -198,7 +198,7 @@ class JarvisApp:
             self.hud.set_mode(Mode.LISTENING)
             self.hud.status("listening")
 
-        greeting = self.jarvis.voice.summoned(self.jarvis.memory.profile.name)
+        greeting = self.jarvis.voice.summoned(self.jarvis.spoken_name)
         self._speak(greeting)
 
         # The briefing is the slow part, so it goes out after the greeting

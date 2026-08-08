@@ -139,11 +139,14 @@ there so it can never surprise you.
 jarvis
 ```
 
-That's the whole command. He starts up in the Terminal and tells you he's
-listening.
+That's the whole command. Nothing appears — he's listening.
 
-**Now say "hey Jarvis" out loud.** He answers back, out loud:
-*"Hello, sir. What can I do for you?"*
+**Now say "hey Jarvis" out loud.** A window pops up in front of whatever you're
+doing, and he answers out loud: *"Hello, sir. What can I do for you?"*
+
+He calls you **sir**, not by name — the computer voice mangles most real names,
+and hearing yours said wrong every single time gets old fast. If you'd rather
+he used it, see *Being called by your name* below.
 
 **The first time each day** he also gives you the morning rundown without being
 asked — your portfolio, what moved overnight, anything he's watching, and
@@ -195,6 +198,28 @@ something so you can hear it.
 > to give Linux the microphone: **Settings → Linux → Microphone**, turn it on,
 > then restart Linux. Second, run `./setup.sh` again — it installs the
 > microphone packages and tells you if they failed. Typing works regardless.
+
+---
+
+## Being called by your name
+
+He says "sir" by default. To have him use your name instead, paste this once:
+
+```
+echo 'export JARVIS_USE_NAME=1' >> ~/.bashrc
+```
+
+If he pronounces it wrong, spell it out the way it *sounds*:
+
+```
+echo 'export JARVIS_SPOKEN_NAME=Kayleb' >> ~/.bashrc
+```
+
+Close the Terminal and reopen it. Your name still shows correctly on screen —
+only what he says out loud changes.
+
+**Prefer no window?** `echo 'export JARVIS_WINDOW=0' >> ~/.bashrc` keeps him in
+the Terminal. Everything works the same either way.
 
 ---
 

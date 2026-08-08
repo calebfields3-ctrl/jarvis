@@ -1,9 +1,9 @@
 # Jarvis
 
 A self-learning AI trading assistant with a real mind and real control of its
-own machine. He lives in your terminal, answers to "hey Jarvis" out loud,
-greets Caleb by name, opens with the portfolio and the previous day's P/L, and
-remembers everything across sessions. He starts with foundational trading
+own machine. Say "hey Jarvis" and he appears and answers out loud, opens with
+the portfolio and the previous day's P/L, and remembers everything across
+sessions. He starts with foundational trading
 knowledge and builds real expertise by studying curated sources — then grades
 himself against what the market actually did.
 
@@ -11,9 +11,10 @@ himself against what the market actually did.
 $ jarvis
 ```
 
-He starts in your terminal and says he's listening.
+He starts up listening, with nothing on screen.
 
-Say **"hey Jarvis"** and he answers out loud. The first summons of each day also
+Say **"hey Jarvis"** and a window comes up in front of whatever you're doing,
+and he answers out loud. The first summons of each day also
 brings the morning rundown unasked — portfolio, overnight news, standing
 watches, whether you're clear to day trade. Every summons after that is one
 line, because a briefing you hear twenty times a day stops being a briefing.
@@ -23,9 +24,15 @@ open.
 Every tool call prints as it happens, so you can watch a thing with a shell do
 its work rather than reading about it afterwards in the log.
 
-There's a HUD too — `jarvis start --window` — a dark window with an arc reactor
-that brightens when he listens and pulses when he speaks. It's optional. The
-terminal is home.
+The window is the arc-reactor HUD: it brightens when he's listening, ticks over
+while he works, pulses when he speaks, and turns amber when he needs your
+say-so. `jarvis start --no-window` keeps him in the terminal instead, where
+everything works the same.
+
+He calls you "sir" rather than by name — text-to-speech mispronounces plenty of
+real names, and hearing yours said wrong every time is worse than not being
+named. `JARVIS_USE_NAME=1` turns the name back on, and `JARVIS_SPOKEN_NAME`
+takes a phonetic respelling so it sounds right when it does.
 
 Behind it, Claude Opus 5 holds seventeen tools — a shell, the filesystem, a
 browser, and everything below. Every one of them goes through a permission
@@ -179,7 +186,7 @@ jarvis buy AAPL 100 182.30
 jarvis buy NVDA 50 118.75
 
 jarvis bootstrap          # replay 2 years of history to build a track record
-jarvis                    # the real thing: terminal, wake word, mind
+jarvis                    # the real thing: wake word, window, mind
 ```
 
 `jarvis bootstrap` matters. Without it, every pattern is an untested hypothesis
@@ -448,7 +455,7 @@ they just type.
 | Command | What it does |
 |---|---|
 | `jarvis` | **The whole thing** — wake word and the full agent, in your terminal |
-| `jarvis start --window` | Same, plus the arc-reactor HUD |
+| `jarvis start --no-window` | Same, but stays in this terminal |
 | `jarvis start --no-voice` | Same, typing only |
 | `jarvis voice` | What he speaks with, and what's missing |
 | `jarvis voice --install` | Download the neural voice (60 MB, once) |
@@ -488,6 +495,9 @@ All optional; all read from the environment.
 | `JARVIS_WAKE_PHRASE` | Default `hey jarvis` |
 | `JARVIS_PERSONA` | `jarvis` (the butler, default) or `plain` |
 | `JARVIS_ADDRESS` | How he addresses you (default `sir`; empty drops it) |
+| `JARVIS_USE_NAME` | `1` to have him say your actual name instead of the honorific |
+| `JARVIS_SPOKEN_NAME` | Phonetic respelling for speech only, e.g. `Kayleb` |
+| `JARVIS_WINDOW` | `0` to stay in the terminal instead of popping a window up |
 | `ANTHROPIC_API_KEY` | **His mind.** Without it he falls back to the built-in router |
 | `JARVIS_EFFORT` | How hard he thinks: `low`…`max` (default `medium`) |
 | `JARVIS_VOICE` | `1` to enable microphone and speech |

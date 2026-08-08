@@ -88,7 +88,9 @@ class Jarvis:
         self.config = config or get_config()
         self.memory = memory or Memory(self.config.db_path)
         self.voice = persona or build_persona(
-            self.config.persona, address=self.config.address
+            self.config.persona,
+            address=self.config.address,
+            use_name=self.config.use_name,
         )
         self.provider = provider or (
             SyntheticProvider() if offline else build_provider(prefer_live=True)
@@ -206,7 +208,7 @@ class Jarvis:
         if self.session_id is None:
             self.session_id = self.memory.sessions.start(channel="voice")
 
-        name = self.memory.profile.name
+        name = self.spoken_name
         study = self._study_report()
 
         if not self.first_time_today():
@@ -253,12 +255,22 @@ class Jarvis:
 
         return market_now().date().isoformat()
 
+    @property
+    def spoken_name(self) -> str:
+        """His name as it should be *said*, which is not always how it's spelt.
+
+        Text-to-speech gets plenty of real names wrong. ``JARVIS_SPOKEN_NAME``
+        takes a phonetic respelling, so the name on screen stays correct while
+        the one out of the speaker sounds right.
+        """
+        return self.config.spoken_name or self.memory.profile.name
+
     def _greeting_context(self) -> GreetingContext:
         previous = self.memory.sessions.last_session()
         level, score = self.memory.knowledge.expertise_level()
         stats = self.memory.knowledge.stats()
         return GreetingContext(
-            name=self.memory.profile.name,
+            name=self.spoken_name,
             hour=datetime.now().hour,
             first_session=not (previous and previous.get("started_at")),
             gap=(

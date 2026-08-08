@@ -107,12 +107,16 @@ def cmd_start(args, jarvis: Jarvis) -> int:
     """The whole thing: window, wake word, and a real mind behind it."""
     from jarvis.app import JarvisApp
 
+    use_hud = jarvis.config.window
+    if getattr(args, "window", False):
+        use_hud = True
+    if getattr(args, "no_window", False):
+        use_hud = False
+
     JarvisApp(
         jarvis.config,
         jarvis=jarvis,
-        # The terminal is where he lives. The window is there for anyone who
-        # wants it, but it is not what you get by default.
-        use_hud=getattr(args, "window", False),
+        use_hud=use_hud,
         use_voice=not getattr(args, "no_voice", False),
     ).run()
     return 0
@@ -200,7 +204,7 @@ def cmd_voice(args, jarvis: Jarvis) -> int:
     print()
 
     if args.test:
-        speaker.say(jarvis.voice.summoned(jarvis.memory.profile.name))
+        speaker.say(jarvis.voice.summoned(jarvis.spoken_name))
     return 0
 
 
@@ -418,8 +422,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", "-v", action="store_true", help="debug logging")
     sub = parser.add_subparsers(dest="command")
 
-    start = sub.add_parser("start", help="the wake word and the full agent, in this terminal (default)")
-    start.add_argument("--window", action="store_true", help="open the HUD window instead")
+    start = sub.add_parser("start", help="the wake word and the full agent (default)")
+    start.add_argument("--window", action="store_true", help="force the pop-up window")
+    start.add_argument("--no-window", action="store_true", help="stay in this terminal")
     start.add_argument("--no-voice", action="store_true", help="don't listen on the microphone")
     start.set_defaults(func=cmd_start)
 

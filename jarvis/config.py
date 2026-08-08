@@ -65,6 +65,13 @@ class Config:
     persona: str = os.environ.get("JARVIS_PERSONA", "jarvis")
     # How he addresses you. Empty string drops the honorific entirely.
     address: str | None = os.environ.get("JARVIS_ADDRESS")
+    # Whether he says your actual name out loud, or sticks to the honorific.
+    # Off by default: text-to-speech mispronounces plenty of real names, and
+    # hearing yours said wrong every time is worse than not being named.
+    use_name: bool = field(default_factory=lambda: _env_flag("JARVIS_USE_NAME", False))
+    # A phonetic respelling used only for speech, e.g. JARVIS_SPOKEN_NAME=Kayleb.
+    # Lets you turn the name back on once it sounds right.
+    spoken_name: str | None = os.environ.get("JARVIS_SPOKEN_NAME")
 
     # --- storage --------------------------------------------------------
     home: Path = field(default_factory=_home)
@@ -109,6 +116,11 @@ class Config:
     # once when the class is defined, so a plain one would read the
     # environment at import time and ignore anything set afterwards.
     voice_enabled: bool = field(default_factory=lambda: _env_flag("JARVIS_VOICE", True))
+    # Whether the wake word pops a window up on screen. On by default -- that
+    # is the thing he asked for. Falls back to the terminal on its own when
+    # the window toolkit is missing, so turning it on is never a hard failure.
+    # Set JARVIS_WINDOW=0 to stay in the terminal.
+    window: bool = field(default_factory=lambda: _env_flag("JARVIS_WINDOW", True))
     porcupine_key: str | None = os.environ.get("PICOVOICE_ACCESS_KEY")
 
     def __post_init__(self) -> None:

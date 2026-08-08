@@ -35,8 +35,10 @@ def test_watchlist_exceeds_five_hundred(jarvis):
 
 
 # ------------------------------------------------------------------ waking
-def test_greeting_uses_the_owners_name(jarvis):
-    assert "Caleb" in jarvis.wake()
+def test_greeting_addresses_you(jarvis):
+    """By default that's the honorific -- speech mispronounces real names."""
+    assert "sir" in jarvis.wake().lower()
+    assert "Caleb" not in jarvis.wake()
 
 
 def test_greeting_reports_an_empty_portfolio_honestly(jarvis):
@@ -430,7 +432,7 @@ def test_the_first_summon_brings_the_whole_briefing(jarvis):
     """Portfolio, and whatever else the pre-market brief turns up."""
     briefing = jarvis.summoned()
     assert len(briefing.splitlines()) > 3
-    assert "Caleb" in briefing
+    assert "sir" in briefing.lower()
 
 
 def test_later_summons_are_a_single_line(jarvis):
@@ -456,7 +458,7 @@ def test_a_failing_briefing_still_greets_him(jarvis, monkeypatch):
 
     monkeypatch.setattr(jarvis, "premarket_brief", explode)
     briefing = jarvis.summoned()
-    assert "Caleb" in briefing
+    assert "sir" in briefing.lower()
     assert briefing.strip()
 
 

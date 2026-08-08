@@ -90,9 +90,25 @@ def test_plain_persona_has_no_honorific(plain_voice):
 # ------------------------------------------------------------------- greeting
 @pytest.mark.parametrize("key", list(PERSONAS))
 def test_every_persona_greets_by_name(key):
-    """The original brief: he greets you by name. Non-negotiable in any voice."""
-    voice = build_persona(key, seed=1)
+    """He greets you by name when asked to. Off by default -- speech mangles it."""
+    voice = build_persona(key, seed=1, use_name=True)
     assert "Caleb" in voice.greeting_open(ctx())
+
+
+@pytest.mark.parametrize("key", sorted(PERSONAS))
+def test_by_default_he_uses_the_honorific_not_your_name(key):
+    """A name said wrong every time is worse than not being named.
+
+    A persona with no honorific has nothing else to call you, so it keeps
+    the name -- dropping it would leave "Good morning, ."
+    """
+    voice = build_persona(key, seed=1)
+    said = voice.greeting_open(ctx())
+    if voice.address:
+        assert "Caleb" not in said
+        assert voice.address in said
+    else:
+        assert "Caleb" in said
 
 
 @pytest.mark.parametrize("hour,expected", [(9, "morning"), (14, "afternoon"), (20, "evening")])
@@ -101,7 +117,8 @@ def test_greeting_tracks_the_clock(jarvis_voice, hour, expected):
 
 
 def test_small_hours_get_a_dry_remark(jarvis_voice):
-    assert "Caleb" in jarvis_voice.greeting_open(ctx(hour=3))
+    said = jarvis_voice.greeting_open(ctx(hour=3))
+    assert "early" in said or "hardly earns" in said
 
 
 def test_first_session_is_acknowledged(jarvis_voice):
@@ -236,10 +253,15 @@ def test_a_winning_laggard_is_not_called_unhappy(jarvis_voice):
 # ------------------------------------------------------- what he says on wake
 
 
-def test_he_uses_your_name_when_summoned_not_only_sir(jarvis_voice):
-    """A butler who says nothing but "sir" sounds like a phone menu."""
-    said = {JarvisPersona(seed=s).summoned("Caleb") for s in range(40)}
+def test_he_uses_your_name_when_summoned_if_you_want_it(jarvis_voice):
+    said = {JarvisPersona(seed=s, use_name=True).summoned("Caleb") for s in range(40)}
     assert any("Caleb" in line for line in said), "he never once used the name"
+
+
+def test_by_default_the_summons_never_says_your_name(jarvis_voice):
+    """Text-to-speech mispronounces plenty of real names, Caleb's included."""
+    for seed in range(40):
+        assert "Caleb" not in JarvisPersona(seed=seed).summoned("Caleb")
 
 
 def test_the_summons_never_starts_with_a_stray_space(jarvis_voice):
@@ -265,7 +287,40 @@ def test_dropping_the_honorific_leaves_no_dangling_punctuation():
         assert not line.startswith(",")
 
 
-def test_every_persona_greets_by_name_at_least_sometimes():
+def test_every_persona_can_greet_by_name_when_asked():
     for key in PERSONAS:
-        said = {build_persona(key, seed=s).summoned("Caleb") for s in range(40)}
+        said = {
+            build_persona(key, seed=s, use_name=True).summoned("Caleb")
+            for s in range(40)
+        }
         assert any("Caleb" in line for line in said), f"{key} never uses the name"
+
+
+def test_every_persona_still_addresses_you_as_something():
+    """Dropping the name must not leave 'Hello, . What can I do for you?'."""
+    for key in PERSONAS:
+        for seed in range(20):
+            line = build_persona(key, seed=seed).summoned("Caleb")
+            assert ", ." not in line and "  " not in line
+            assert line.strip() == line and line[0].isupper()
+
+
+# ------------------------------------------------- how he addresses you aloud
+
+
+def test_the_honorific_is_configurable():
+    """It may be capitalised at the start of a sentence, hence the fold."""
+    voice = build_persona("jarvis", seed=1, address="boss")
+    assert "boss" in voice.summoned("Caleb").lower()
+
+
+def test_a_phonetic_respelling_is_what_gets_said():
+    """The screen keeps 'Caleb'; the speaker gets something it pronounces right."""
+    voice = build_persona("jarvis", seed=2, use_name=True)
+    assert "Kayleb" in voice.greeting_open(ctx(name="Kayleb"))
+
+
+def test_with_no_honorific_and_no_name_he_still_says_something():
+    voice = build_persona("jarvis", seed=1, address="")
+    line = voice.summoned("")
+    assert line.strip() and ", ." not in line
