@@ -18,7 +18,7 @@ from datetime import datetime
 from .brain import Jarvis
 from .config import get_config
 from .market.yahoo import quiet_yfinance
-from .voice.io import VoiceChannel
+from .voice.io import VoiceChannel, quiet_audio
 
 BANNER = r"""
    _   _   ___  _   _ ___ ___
@@ -554,8 +554,10 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    # Third-party network chatter is silenced unless you asked to see it.
+    # Third-party chatter is silenced unless you asked to see it. ALSA alone
+    # prints eighty lines every time the microphone opens.
     quiet_yfinance(not args.verbose)
+    quiet_audio(not args.verbose)
 
     if not getattr(args, "func", None):
         # Bare `jarvis` opens the real thing rather than printing help. He

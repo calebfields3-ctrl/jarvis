@@ -16,6 +16,7 @@ working answer.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import shutil
@@ -27,6 +28,77 @@ from pathlib import Path
 from typing import Callable, Protocol
 
 log = logging.getLogger(__name__)
+
+# ------------------------------------------------------------------ quiet
+# ALSA and JACK write their complaints straight to file descriptor 2 from C,
+# before Python ever sees them, so logging config and `contextlib.redirect_
+# stderr` are both powerless against them. On a Chromebook the result is
+# roughly eighty lines of "Unknown PCM cards.pcm.rear" and "jack server is not
+# running" every time the microphone is opened -- which is every few seconds,
+# for as long as he is listening.
+#
+# None of it indicates a problem. ALSA is enumerating audio devices that do
+# not exist on this machine and saying so. But it buries the one line that
+# matters and makes a working program look broken, which is worse than the
+# original noise being merely ugly.
+#
+# So the file descriptor itself is redirected around the calls that provoke
+# it. `jarvis --verbose` turns it back on, because when the microphone really
+# is broken these messages are exactly what you want to read.
+SILENCE_AUDIO_NOISE = True
+
+
+def quiet_audio(quiet: bool = True) -> None:
+    global SILENCE_AUDIO_NOISE
+    SILENCE_AUDIO_NOISE = quiet
+
+
+@contextlib.contextmanager
+def hushed():
+    """Send C-level stderr to /dev/null for the duration of the block.
+
+    Kept as tight as possible around the audio calls: this hides real errors
+    too, so it must not wrap anything that reports a problem worth seeing.
+    """
+    if not SILENCE_AUDIO_NOISE:
+        yield
+        return
+    try:
+        saved = os.dup(2)
+    except OSError:
+        yield
+        return
+    try:
+        with open(os.devnull, "w") as null:
+            os.dup2(null.fileno(), 2)
+        yield
+    finally:
+        try:
+            os.dup2(saved, 2)
+        finally:
+            os.close(saved)
+
+
+def _mute_alsa_handler() -> None:
+    """Ask ALSA directly to stop reporting missing devices.
+
+    Redundant with :func:`hushed` for the calls it wraps, but it also covers
+    anything the library logs outside them, and it costs one call.
+    """
+    try:
+        import ctypes
+
+        handler = ctypes.CFUNCTYPE(
+            None, ctypes.c_char_p, ctypes.c_int,
+            ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p,
+        )(lambda *_: None)
+        asound = ctypes.cdll.LoadLibrary("libasound.so.2")
+        asound.snd_lib_error_set_handler(handler)
+        # Held on the module so ctypes does not collect the callback while
+        # ALSA still has a pointer to it.
+        globals()["_alsa_handler_ref"] = handler
+    except Exception:
+        log.debug("could not install the ALSA error handler", exc_info=True)
 
 
 class Speaker(Protocol):
@@ -109,10 +181,11 @@ class PiperSpeaker:
                 target = Path(tmp.name)
             try:
                 self._synthesise(text, target)
-                subprocess.run(
-                    [*self.player.split(), str(target)],
-                    check=False, capture_output=True, timeout=180,
-                )
+                with hushed():
+                    subprocess.run(
+                        [*self.player.split(), str(target)],
+                        check=False, capture_output=True, timeout=180,
+                    )
             finally:
                 target.unlink(missing_ok=True)
         except Exception as exc:
@@ -249,17 +322,21 @@ class SpeechListener:
     def __init__(self, *, energy_threshold: int = 300, pause_threshold: float = 0.8) -> None:
         import speech_recognition as sr  # type: ignore
 
+        _mute_alsa_handler()
         self.sr = sr
         self.recognizer = sr.Recognizer()
         self.recognizer.energy_threshold = energy_threshold
         self.recognizer.pause_threshold = pause_threshold
-        self.microphone = sr.Microphone()
-        with self.microphone as source:
-            self.recognizer.adjust_for_ambient_noise(source, duration=0.6)
+        with hushed():
+            self.microphone = sr.Microphone()
+            with self.microphone as source:
+                self.recognizer.adjust_for_ambient_noise(source, duration=0.6)
 
     def listen(self, timeout: float | None = 8.0) -> str | None:
         try:
-            with self.microphone as source:
+            # Reopening the device is what floods the terminal, and it happens
+            # on every single listen -- several times a minute, all day.
+            with hushed(), self.microphone as source:
                 audio = self.recognizer.listen(source, timeout=timeout, phrase_time_limit=15)
         except Exception:
             return None
@@ -298,6 +375,7 @@ class PorcupineWake:
     name = "porcupine"
 
     def __init__(self, access_key: str, keyword: str = "jarvis") -> None:
+        _mute_alsa_handler()
         import pvporcupine  # type: ignore
         import pyaudio  # type: ignore
 

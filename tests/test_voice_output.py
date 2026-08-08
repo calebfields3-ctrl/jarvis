@@ -8,6 +8,7 @@ a broken program.
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 import wave
@@ -273,3 +274,59 @@ def test_a_successful_download_returns_where_it_landed(voices, monkeypatch):
 def test_the_default_voice_is_a_british_male():
     """He is meant to sound like the character."""
     assert io.DEFAULT_PIPER_VOICE.startswith("en_GB")
+
+
+# ------------------------------------------------------- the ALSA noise floor
+
+
+def test_hushed_swallows_c_level_stderr(capfd):
+    """ALSA writes to fd 2 from C, so redirect_stderr cannot touch it."""
+    io.quiet_audio(True)
+    with io.hushed():
+        os.write(2, b"ALSA lib pcm.c:2222: Unknown PCM cards.pcm.rear\n")
+    assert "Unknown PCM" not in capfd.readouterr().err
+
+
+def test_stderr_still_works_afterwards(capfd):
+    io.quiet_audio(True)
+    with io.hushed():
+        os.write(2, b"noise\n")
+    os.write(2, b"a real error\n")
+    assert "a real error" in capfd.readouterr().err
+
+
+def test_stderr_is_restored_even_when_the_block_raises(capfd):
+    io.quiet_audio(True)
+    with pytest.raises(ValueError):
+        with io.hushed():
+            raise ValueError("boom")
+    os.write(2, b"still here\n")
+    assert "still here" in capfd.readouterr().err
+
+
+def test_verbose_lets_the_noise_through(capfd):
+    """When the microphone really is broken, these lines are what you want."""
+    io.quiet_audio(False)
+    try:
+        with io.hushed():
+            os.write(2, b"ALSA lib pcm.c:2222: Unknown PCM\n")
+        assert "Unknown PCM" in capfd.readouterr().err
+    finally:
+        io.quiet_audio(True)
+
+
+def test_nesting_does_not_leak_a_descriptor(capfd):
+    io.quiet_audio(True)
+    before = os.dup(2)
+    os.close(before)
+    for _ in range(50):
+        with io.hushed():
+            os.write(2, b"noise\n")
+    after = os.dup(2)
+    os.close(after)
+    assert after - before < 10, "file descriptors are leaking on every listen"
+
+
+def test_the_alsa_handler_install_never_raises():
+    """It is a nicety; a machine without libasound must not crash on startup."""
+    io._mute_alsa_handler()
