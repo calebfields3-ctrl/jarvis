@@ -153,10 +153,16 @@ export ANTHROPIC_API_KEY=sk-ant-...      # console.anthropic.com -> API keys
 `./setup.sh` asks for this and writes it to your shell profile for you. A few
 dollars a month covers normal use.
 
+He speaks through Piper — a small neural text-to-speech model that runs
+offline, no API and no key. `jarvis voice --install` fetches a British male
+voice once; without it he falls back to espeak, which is intelligible and
+sounds like 1985.
+
 Everything degrades gracefully. No API key and he falls back to the built-in
 router — less capable, still useful, and it's also what runs when the network
-is down. No microphone packages and you type instead of talking. Each step down
-is announced once, in a sentence.
+is down. No microphone packages and you type instead of talking. No voice model
+and he sounds robotic rather than going silent. Each step down is announced
+once, in a sentence.
 
 ```bash
 jarvis status        # what's configured, what isn't
@@ -444,6 +450,8 @@ they just type.
 | `jarvis` | **The whole thing** — wake word and the full agent, in your terminal |
 | `jarvis start --window` | Same, plus the arc-reactor HUD |
 | `jarvis start --no-voice` | Same, typing only |
+| `jarvis voice` | What he speaks with, and what's missing |
+| `jarvis voice --install` | Download the neural voice (60 MB, once) |
 | `jarvis run` | The older text-only wake-word loop, with background monitoring |
 | `jarvis wake` | Print the greeting once |
 | `jarvis ask "..."` | One question |

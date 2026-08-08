@@ -181,6 +181,16 @@ do at all even if you say yes, and he'll tell you which.
 
 To stop him, hold **Ctrl + C**.
 
+**If he sounds robotic**, his good voice didn't install. Run:
+
+```
+jarvis voice --install
+```
+
+That downloads a British male neural voice (about 60 MB, once). `jarvis voice`
+on its own tells you what's missing, and `jarvis voice --test` makes him say
+something so you can hear it.
+
 > **If "hey Jarvis" does nothing**, two things to check. First, ChromeOS has
 > to give Linux the microphone: **Settings → Linux → Microphone**, turn it on,
 > then restart Linux. Second, run `./setup.sh` again — it installs the

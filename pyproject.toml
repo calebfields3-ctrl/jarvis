@@ -22,6 +22,9 @@ voice = [
     "pyaudio>=0.2.13",
     "SpeechRecognition>=3.10",
     "pyttsx3>=2.90",
+    # Neural text-to-speech, offline. The voice model itself is downloaded
+    # separately by `jarvis voice --install` -- it is 60 MB and not a package.
+    "piper-tts>=1.2",
 ]
 dev = ["pytest>=8.0"]
 all = [

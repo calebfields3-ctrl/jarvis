@@ -156,6 +156,54 @@ def cmd_run(args, jarvis: Jarvis) -> int:
     return 0
 
 
+def cmd_voice(args, jarvis: Jarvis) -> int:
+    """Install, inspect, or try out the voice he speaks with."""
+    from jarvis.voice.io import (
+        DEFAULT_PIPER_VOICE,
+        build_speaker,
+        find_audio_player,
+        find_piper_voice,
+        install_piper_voice,
+        voices_dir,
+    )
+
+    if args.install:
+        name = args.install if isinstance(args.install, str) else DEFAULT_PIPER_VOICE
+        print(f"Downloading the '{name}' voice (about 60 MB, once)...")
+        try:
+            model = install_piper_voice(name)
+        except RuntimeError as exc:
+            print(f"\n{exc}\n")
+            return 1
+        print(f"Installed: {model}")
+
+    model = find_piper_voice()
+    player = find_audio_player()
+    print(f"\n  voice model : {model or 'none installed'}")
+    print(f"  audio player: {player or 'none found'}")
+
+    speaker = build_speaker(True)
+    print(f"  speaking via: {speaker.name}")
+
+    if speaker.name != "piper":
+        # Only name the step that is actually missing. A list of things to
+        # install, most of which are already installed, teaches you to ignore it.
+        print("\n  He'll sound robotic. To fix that:")
+        try:
+            import piper  # noqa: F401
+        except ImportError:
+            print("    pip install piper-tts")
+        if model is None:
+            print("    jarvis voice --install")
+        if player is None:
+            print("    sudo apt install -y alsa-utils")
+    print()
+
+    if args.test:
+        speaker.say(jarvis.voice.summoned(jarvis.memory.profile.name))
+    return 0
+
+
 def cmd_wake(args, jarvis: Jarvis) -> int:
     print(jarvis.wake())
     jarvis.sleep()
@@ -378,6 +426,14 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="the older text-only wake-word loop")
     run.add_argument("--no-monitors", action="store_true", help="skip background loops")
     run.set_defaults(func=cmd_run)
+
+    voice = sub.add_parser("voice", help="install and test the voice he speaks with")
+    voice.add_argument(
+        "--install", nargs="?", const=True, metavar="NAME",
+        help="download a voice model (default: en_GB-alan-medium)",
+    )
+    voice.add_argument("--test", action="store_true", help="say something out loud")
+    voice.set_defaults(func=cmd_voice)
 
     sub.add_parser("wake", help="print the greeting once").set_defaults(func=cmd_wake)
 

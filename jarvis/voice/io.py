@@ -7,7 +7,8 @@ wake word   Picovoice Porcupine (it ships a built-in "jarvis" keyword) ->
             openWakeWord -> continuous speech recognition matching the phrase ->
             typing the phrase at a prompt.
 listening   SpeechRecognition + Google/Sphinx -> typed input.
-speaking    pyttsx3 (offline) -> macOS `say` / Linux `espeak` -> stdout.
+speaking    Piper (neural, offline, sounds human) -> pyttsx3 -> macOS `say` /
+            Linux `espeak` -> stdout.
 
 Nothing here raises when a backend is missing; ``TextChannel`` is always a
 working answer.
@@ -16,9 +17,13 @@ working answer.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import wave
+from pathlib import Path
 from typing import Callable, Protocol
 
 log = logging.getLogger(__name__)
@@ -54,6 +59,138 @@ class Pyttsx3Speaker:
             log.debug("pyttsx3 failed: %s", exc)
 
 
+class PiperSpeaker:
+    """Neural text-to-speech, offline, and it does not sound like a robot.
+
+    ``espeak`` is intelligible and free and sounds like 1985. Piper runs a
+    small neural model locally -- no API, no key, no network once the voice
+    is downloaded -- and the difference is the difference between a machine
+    reading at you and someone talking to you.
+
+    The cost is a voice model of about sixty megabytes and a synthesis pass
+    that takes a moment. Both are paid once and worth it for the thing you
+    hear every time you say his name.
+
+    Constructing this proves it works end to end: the model loads and a word
+    is synthesised. Failing here is the point -- ``build_speaker`` falls
+    through to espeak, and a Jarvis that says nothing at all is far worse
+    than one that sounds synthetic.
+    """
+
+    name = "piper"
+
+    def __init__(self, model: Path | str | None = None, *, player: str | None = None) -> None:
+        from piper import PiperVoice  # type: ignore
+
+        path = Path(model) if model else find_piper_voice()
+        if path is None:
+            raise RuntimeError("no piper voice model installed")
+
+        self.model_path = Path(path)
+        self.voice = PiperVoice.load(self.model_path)
+        self.player = player or find_audio_player()
+        if self.player is None:
+            raise RuntimeError("nothing on this machine can play audio")
+
+        # Prove the whole path works now, while there is still a fallback.
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as probe:
+            self._synthesise("ready", Path(probe.name))
+
+    def _synthesise(self, text: str, target: Path) -> None:
+        with wave.open(str(target), "wb") as handle:
+            self.voice.synthesize_wav(text, handle)
+
+    def say(self, text: str) -> None:
+        print(text)
+        if not text.strip():
+            return
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                target = Path(tmp.name)
+            try:
+                self._synthesise(text, target)
+                subprocess.run(
+                    [*self.player.split(), str(target)],
+                    check=False, capture_output=True, timeout=180,
+                )
+            finally:
+                target.unlink(missing_ok=True)
+        except Exception as exc:
+            log.debug("piper failed: %s", exc)
+
+
+def find_audio_player() -> str | None:
+    """Something that can play a wav file, in order of how likely it is to work."""
+    for candidate in ("paplay", "aplay -q", "ffplay -nodisp -autoexit -loglevel quiet", "afplay"):
+        if shutil.which(candidate.split()[0]):
+            return candidate
+    return None
+
+
+def voices_dir() -> Path:
+    """Where downloaded voice models live."""
+    home = Path(os.environ.get("JARVIS_HOME", Path.home() / ".jarvis")).expanduser()
+    return home / "voices"
+
+
+def find_piper_voice() -> Path | None:
+    """The voice model to use, if one has been installed.
+
+    An explicit ``JARVIS_VOICE_MODEL`` wins. Otherwise the most recently
+    downloaded model in the voices directory, so installing a new one
+    switches to it without any further configuration.
+    """
+    override = os.environ.get("JARVIS_VOICE_MODEL")
+    if override:
+        path = Path(override).expanduser()
+        return path if path.exists() else None
+
+    directory = voices_dir()
+    if not directory.is_dir():
+        return None
+    models = sorted(
+        directory.glob("*.onnx"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
+    return models[0] if models else None
+
+
+# A British male voice, because that is what the character sounds like.
+DEFAULT_PIPER_VOICE = "en_GB-alan-medium"
+
+
+def install_piper_voice(voice: str = DEFAULT_PIPER_VOICE) -> Path:
+    """Download a voice model. Returns where it landed.
+
+    Raises with a readable message rather than a stack trace -- the likely
+    caller is someone at a terminal for the first time.
+    """
+    try:
+        from piper.download_voices import download_voice  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "piper isn't installed. Run:  pip install piper-tts"
+        ) from exc
+
+    target = voices_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    try:
+        download_voice(voice, target)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Couldn't download the voice '{voice}': {exc}\n"
+            "Check your internet connection, or pick another from "
+            "https://rhasspy.github.io/piper-samples/"
+        ) from exc
+
+    model = target / f"{voice}.onnx"
+    if not model.exists():
+        found = sorted(target.glob("*.onnx"))
+        if not found:
+            raise RuntimeError(f"The download finished but left no model in {target}")
+        model = found[-1]
+    return model
+
+
 class CommandSpeaker:
     """macOS ``say`` or Linux ``espeak``."""
 
@@ -72,6 +209,12 @@ class CommandSpeaker:
 def build_speaker(enabled: bool = True) -> Speaker:
     if not enabled:
         return PrintSpeaker()
+    # Piper first: it is the only one that sounds like a person, and it has
+    # already proved it works by the time its constructor returns.
+    try:
+        return PiperSpeaker()
+    except Exception as exc:
+        log.debug("piper unavailable (%s) -- falling back", exc)
     try:
         return Pyttsx3Speaker()
     except Exception:

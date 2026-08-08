@@ -57,6 +57,11 @@ if ! python3 -c "import speech_recognition" >/dev/null 2>&1; then
     sudo apt-get install -y portaudio19-dev python3-pyaudio espeak-ng flac >/dev/null 2>&1 || true
 fi
 
+# alsa-utils gives us `aplay`, which is how the good voice gets heard.
+if ! command -v aplay >/dev/null 2>&1 && ! command -v paplay >/dev/null 2>&1; then
+    sudo apt-get install -y alsa-utils >/dev/null 2>&1 || true
+fi
+
 # ------------------------------------------------------- 2. Virtual environment
 # A venv keeps Jarvis's packages separate from the system Python, so nothing
 # here can break anything else on the machine.
@@ -94,8 +99,27 @@ elif python -m pip install --quiet SpeechRecognition pyaudio pyttsx3 2>/dev/null
     say "Microphone support installed -- \"hey Jarvis\" will work."
 else
     warn "Couldn't install the microphone packages, so \"hey Jarvis\" won't work yet."
-    warn "Everything else runs -- type to him in the box instead. To retry later:"
+    warn "Everything else runs -- type to him instead. To retry later:"
     warn "    sudo apt install -y portaudio19-dev espeak-ng && pip install SpeechRecognition pyaudio pyttsx3"
+fi
+
+# --------------------------------------------------------------- 3d. His voice
+# Piper is a small neural text-to-speech model that runs offline. Without it he
+# falls back to espeak, which is intelligible and sounds like 1985.
+if python -c "import piper" >/dev/null 2>&1; then
+    say "Neural voice already installed."
+else
+    say "Installing his voice (neural, offline, sounds human)..."
+    python -m pip install --quiet piper-tts >/dev/null 2>&1 || \
+        warn "Couldn't install piper-tts -- he'll use the robotic voice instead."
+fi
+
+if python -c "import piper" >/dev/null 2>&1; then
+    if jarvis voice 2>/dev/null | grep -q "none installed"; then
+        say "Downloading his voice model (about 60 MB, once)..."
+        jarvis voice --install >/dev/null 2>&1 || \
+            warn "Voice download failed. Run 'jarvis voice --install' later to retry."
+    fi
 fi
 
 # --------------------------------------------------------------- 3b. The key
