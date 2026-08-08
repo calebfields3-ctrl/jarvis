@@ -576,3 +576,61 @@ def test_you_can_see_what_he_touches_from_the_terminal(app, capsys):
     out = capsys.readouterr().out
     assert "run_command" in out and "rm notes.txt" in out
     assert "×" in out, "a refused call should look different from an allowed one"
+
+
+# ------------------------------------------------- what actually gets spoken
+
+
+def test_command_examples_are_never_read_aloud():
+    """"jarvis deposit 10000" pronounced as words is not a briefing."""
+    from jarvis.app import speakable
+
+    said = speakable(
+        "Your portfolio is empty, sir. Fund it and I'll keep score:\n"
+        "  jarvis deposit 10000\n"
+        "  jarvis buy AAPL 10 185.50"
+    )
+    assert "deposit 10000" not in said
+    assert "portfolio is empty" in said
+
+
+def test_bullets_lose_their_punctuation_but_keep_their_words():
+    from jarvis.app import speakable
+
+    said = speakable("Overnight:\n  - Fed signals slower cuts (Reuters)\n  - Oil down 3%")
+    assert "Fed signals slower cuts" in said
+    assert "- " not in said
+
+
+def test_a_long_briefing_is_cut_rather_than_read_for_five_minutes():
+    from jarvis.app import SPOKEN_LIMIT, speakable
+
+    said = speakable(". ".join(f"Sentence number {i} about the market" for i in range(200)))
+    assert len(said) < SPOKEN_LIMIT + 60
+    assert said.endswith("The rest is on your screen.")
+
+
+def test_the_cut_lands_on_a_sentence_end_not_mid_word():
+    from jarvis.app import speakable
+
+    said = speakable(" ".join(f"This is sentence {i}." for i in range(100)))
+    body = said.replace(" The rest is on your screen.", "")
+    assert body.endswith(".")
+
+
+def test_a_short_answer_is_spoken_exactly_as_written():
+    from jarvis.app import speakable
+
+    assert speakable("Hello, Caleb. What can I do for you?") == \
+        "Hello, Caleb. What can I do for you?"
+
+
+def test_the_screen_still_gets_everything(app, capsys):
+    """Trimming is for the ear only. Nothing is lost from the transcript."""
+    app.hud = None
+    app.voice = FakeVoice()
+    full = "Portfolio update.\n  jarvis deposit 10000\n  - Fed cut rates"
+    app._speak(full)
+
+    assert "jarvis deposit 10000" in capsys.readouterr().out
+    assert "deposit 10000" not in app.voice.spoken[0]

@@ -42,6 +42,47 @@ DISMISSALS = {
 }
 
 
+# Roughly a minute of speech. Past this he is talking at Caleb rather than
+# to him, and the screen has the whole thing anyway.
+SPOKEN_LIMIT = 600
+
+
+def speakable(text: str) -> str:
+    """Turn something written for the screen into something worth hearing.
+
+    A morning briefing is a page of text. Read out verbatim it includes
+    command examples -- "jarvis deposit 10000" pronounced as words -- and
+    bullet punctuation, and it runs for minutes. What comes out of the
+    speaker should be the substance of it and then stop; the screen keeps
+    the rest.
+    """
+    keep: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # Command examples are for reading and typing, never for hearing.
+        if stripped.startswith(("jarvis ", "$ ", "sudo ", "pip ", "export ")):
+            continue
+        # Bullets and dashes are punctuation the ear can't use.
+        if stripped.startswith(("- ", "* ", "• ")):
+            stripped = stripped[2:].strip()
+        keep.append(stripped)
+
+    spoken = " ".join(keep)
+    if len(spoken) <= SPOKEN_LIMIT:
+        return spoken
+
+    # Cut at a sentence end rather than mid-word.
+    cut = spoken[:SPOKEN_LIMIT]
+    for stop in (". ", "? ", "! "):
+        index = cut.rfind(stop)
+        if index > SPOKEN_LIMIT // 2:
+            cut = cut[: index + 1]
+            break
+    return f"{cut.rstrip()} The rest is on your screen."
+
+
 class JarvisApp:
     """Assembles Jarvis and runs him until Caleb closes the window."""
 
@@ -174,14 +215,19 @@ class JarvisApp:
         self._handle(heard)
 
     def _speak(self, text: str) -> None:
-        """Put a line in front of Caleb, in whatever channels exist."""
+        """Put a line in front of Caleb, in whatever channels exist.
+
+        The screen gets everything; the speaker gets a version fit to listen
+        to. They are not the same thing, and reading the screen out verbatim
+        is how a useful briefing becomes something you talk over.
+        """
         if self.hud is not None:
             self.hud.say(text)
         else:
             print(f"\n{text}\n")
         if self.voice is not None:
             try:
-                self.voice.say(text)
+                self.voice.say(speakable(text))
             except Exception:
                 log.debug("speaking failed", exc_info=True)
 

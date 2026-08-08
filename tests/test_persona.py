@@ -231,3 +231,41 @@ def test_a_winning_laggard_is_not_called_unhappy(jarvis_voice):
 
     ugly = jarvis_voice.worst_position("XOM", -12.0, -1200.0)
     assert "draw your attention" in ugly
+
+
+# ------------------------------------------------------- what he says on wake
+
+
+def test_he_uses_your_name_when_summoned_not_only_sir(jarvis_voice):
+    """A butler who says nothing but "sir" sounds like a phone menu."""
+    said = {JarvisPersona(seed=s).summoned("Caleb") for s in range(40)}
+    assert any("Caleb" in line for line in said), "he never once used the name"
+
+
+def test_the_summons_never_starts_with_a_stray_space(jarvis_voice):
+    """It's the line he says most often, out loud, and it read ' sir. How...'."""
+    for seed in range(40):
+        line = JarvisPersona(seed=seed).summoned("Caleb")
+        assert line == line.strip()
+        assert line[0].isupper(), f"{line!r} doesn't start with a capital"
+
+
+def test_the_summons_is_one_short_spoken_line(jarvis_voice):
+    for seed in range(40):
+        line = JarvisPersona(seed=seed).summoned("Caleb")
+        assert "\n" not in line
+        assert len(line) < 60, f"{line!r} is too long to say on waking"
+
+
+def test_dropping_the_honorific_leaves_no_dangling_punctuation():
+    """`JARVIS_ADDRESS=''` must not produce 'Hello, . What do you need?'."""
+    for seed in range(40):
+        line = build_persona("jarvis", seed=seed, address="").summoned("Caleb")
+        assert ", ." not in line and "  " not in line
+        assert not line.startswith(",")
+
+
+def test_every_persona_greets_by_name_at_least_sometimes():
+    for key in PERSONAS:
+        said = {build_persona(key, seed=s).summoned("Caleb") for s in range(40)}
+        assert any("Caleb" in line for line in said), f"{key} never uses the name"

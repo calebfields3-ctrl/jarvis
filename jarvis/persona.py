@@ -58,11 +58,6 @@ class Persona:
         """', sir' when the persona uses an honorific, else nothing."""
         return f", {self.address}" if self.address else ""
 
-    @property
-    def _Sir(self) -> str:
-        """' sir' as a standalone address, else nothing."""
-        return f" {self.address}" if self.address else ""
-
     @staticmethod
     def money(value: float, *, signed: bool = False) -> str:
         sign = "+" if signed and value >= 0 else ("-" if signed else "")
@@ -301,11 +296,16 @@ class JarvisPersona(Persona):
         )
 
     def summoned(self, name: str) -> str:
+        # His name, not only the honorific. Being greeted by name is the point
+        # of having him; a butler who says nothing but "sir" sounds like a
+        # phone menu. Roughly half of these use it.
         return self._pick((
-            f"Hello{self._sir}. What can I do for you?",
-            f"{self._Sir}. How can I help?",
+            f"Hello, {name}. What can I do for you?",
+            f"{name}. How can I help?",
             f"Yes{self._sir}?",
             f"At your service{self._sir}.",
+            f"Hello{self._sir}. What do you need?",
+            f"I'm here, {name}. What is it?",
         ))
 
     def dismissed(self) -> str:
