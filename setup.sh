@@ -89,7 +89,9 @@ else
     python -m pip install --quiet -e . || die "Even the core install failed. Check your internet connection and run ./setup.sh again."
 fi
 
-command -v jarvis >/dev/null 2>&1 || die "Jarvis installed but is not on the PATH. Try closing the terminal, reopening it, and running ./setup.sh again."
+# The venv's own console script. The launcher installed in step 5 is what
+# makes `jarvis` work outside this shell; this only checks the install worked.
+[ -x .venv/bin/jarvis ] || die "Jarvis installed but produced no command. Try deleting the .venv folder and running ./setup.sh again."
 
 # Voice is a separate install because pyaudio fails to build on plenty of
 # machines and it must not take the whole setup down with it.
@@ -115,9 +117,9 @@ else
 fi
 
 if python -c "import piper" >/dev/null 2>&1; then
-    if jarvis voice 2>/dev/null | grep -q "none installed"; then
+    if .venv/bin/jarvis voice 2>/dev/null | grep -q "none installed"; then
         say "Downloading his voice model (about 60 MB, once)..."
-        jarvis voice --install >/dev/null 2>&1 || \
+        .venv/bin/jarvis voice --install >/dev/null 2>&1 || \
             warn "Voice download failed. Run 'jarvis voice --install' later to retry."
     fi
 fi
@@ -145,33 +147,75 @@ fi
 # ------------------------------------------------------------- 4. Bootstrap
 # Without a track record he reports every setup as untested, which is a poor
 # and misleading first impression.
-if jarvis status 2>/dev/null | grep -q "Graded calls     : 0"; then
+if .venv/bin/jarvis status 2>/dev/null | grep -q "Graded calls     : 0"; then
     say "Building his track record from historical data (about 30 seconds)..."
-    jarvis bootstrap --sample 30 >/dev/null 2>&1 || warn "Bootstrap did not finish. Run 'jarvis bootstrap' yourself later."
+    .venv/bin/jarvis bootstrap --sample 30 >/dev/null 2>&1 || warn "Bootstrap did not finish. Run 'jarvis bootstrap' yourself later."
 else
     say "Track record already built -- skipping."
 fi
 
-# ------------------------------------------------------- 5. Auto-activation
-# Without this, the very next thing people type is `jarvis wake` and they get
-# "command not found", because the venv is not active in their shell. Telling
-# them to activate it is not enough -- it needs to just work.
-ACTIVATE_LINE="cd $(pwd) && source .venv/bin/activate"
-if [ -f "$HOME/.bashrc" ] && grep -Fq "$ACTIVATE_LINE" "$HOME/.bashrc" 2>/dev/null; then
-    say "New terminals already start inside Jarvis -- nothing to do."
-else
-    printf "# Added by Jarvis setup.sh -- start new shells ready to go\n%s\n" \
-        "$ACTIVATE_LINE" >> "$HOME/.bashrc"
-    say "New terminals will now start with Jarvis ready."
+# --------------------------------------------------------- 5. The `jarvis` command
+# "command not found" is the single most common way this fails, and every
+# previous fix here depended on the shell cooperating: activating the venv by
+# hand, or a line in ~/.bashrc that only applies to a brand new terminal and
+# silently does nothing if anything is off.
+#
+# A launcher script depends on none of that. It hard-codes the path to the
+# venv's Python, so `jarvis` works from any directory, in any terminal, with
+# nothing sourced and nothing activated.
+LAUNCHER_DIR="$HOME/.local/bin"
+mkdir -p "$LAUNCHER_DIR"
+cat > "$LAUNCHER_DIR/jarvis" <<LAUNCHER
+#!/usr/bin/env bash
+# Written by Jarvis setup.sh. Runs him from anywhere, no venv activation.
+exec "$(pwd)/.venv/bin/python" -m jarvis.cli "\$@"
+LAUNCHER
+chmod +x "$LAUNCHER_DIR/jarvis"
+say "Installed the 'jarvis' command to $LAUNCHER_DIR."
+
+# ~/.local/bin is on the PATH by default on Debian, but only once it exists at
+# login -- which it may not have when this shell started. Adding it is
+# idempotent and fixes the case where it is missing entirely.
+if ! printf '%s' "$PATH" | tr ':' '\n' | grep -Fqx "$LAUNCHER_DIR"; then
+    if ! grep -Fq 'HOME/.local/bin' "$HOME/.bashrc" 2>/dev/null; then
+        printf '\n# Added by Jarvis setup.sh\nexport PATH="$HOME/.local/bin:$PATH"\n' \
+            >> "$HOME/.bashrc"
+    fi
+    export PATH="$LAUNCHER_DIR:$PATH"
+    say "Added $LAUNCHER_DIR to your PATH."
+fi
+
+# Older versions of this script made every new terminal cd into the Jarvis
+# folder. That is no longer needed and is a surprising thing to leave behind.
+if grep -Fq "source .venv/bin/activate" "$HOME/.bashrc" 2>/dev/null; then
+    sed -i '/# Added by Jarvis setup.sh -- start new shells ready to go/d' "$HOME/.bashrc"
+    sed -i '\|source .venv/bin/activate|d' "$HOME/.bashrc"
+    say "Cleaned up the old auto-activation line."
+fi
+
+command -v jarvis >/dev/null 2>&1 || warn "The 'jarvis' command still is not on your PATH. Run it directly with: $LAUNCHER_DIR/jarvis"
+
+# Typing "hey jarvis" at the shell prompt is the obvious thing to try, and it
+# gets you "hey: command not found" -- which reads like Jarvis is broken when
+# he simply was not running. Making the obvious thing work is cheaper than
+# explaining why it doesn't.
+if ! grep -Fq "Jarvis: make 'hey jarvis' work" "$HOME/.bashrc" 2>/dev/null; then
+    cat >> "$HOME/.bashrc" <<'HEY'
+
+# Jarvis: make 'hey jarvis' work at the prompt, not just at the microphone
+hey() { jarvis; }
+HEY
+    say "You can now type 'hey jarvis' at the prompt too."
 fi
 
 # ---------------------------------------------------------------- 6. Done
 printf "\n${GREEN}${BOLD}Jarvis is ready.${OFF}\n\n"
-printf "  ${BOLD}Run this one line now${OFF} (just this once -- new terminals do it for you):\n\n"
-printf "    ${BOLD}source .venv/bin/activate${OFF}\n\n"
-printf "  Then just type:\n\n"
-printf "    ${BOLD}jarvis${OFF}\n\n"
-printf "  That opens him. Say ${BOLD}\"hey Jarvis\"${OFF} or type in the box at the bottom.\n\n"
+printf "  ${BOLD}Two steps, and they are different things:${OFF}\n\n"
+printf "    ${BOLD}1.${OFF} Type ${BOLD}jarvis${OFF} here and press Enter.   <- starts him\n"
+printf "    ${BOLD}2.${OFF} Then say ${BOLD}\"hey Jarvis\"${OFF} out loud.        <- wakes him\n\n"
+printf "  Saying \"hey Jarvis\" before step 1 talks to the terminal, not to him,\n"
+printf "  and the terminal will tell you 'command not found'.\n\n"
+printf "  ${BOLD}Do step 1 now:${OFF}   ${BOLD}jarvis${OFF}\n\n"
 printf "  Other things he does:\n\n"
 printf "    ${BOLD}jarvis brief${OFF}      pre-market briefing\n"
 printf "    ${BOLD}jarvis train${OFF}      he teaches you to day trade\n"
