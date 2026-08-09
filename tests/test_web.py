@@ -53,7 +53,49 @@ def post(face, path, payload):
 def test_the_page_is_served(face):
     page = urllib.request.urlopen(face.url, timeout=3).read().decode()
     assert "<!doctype html>" in page.lower()
-    assert 'id="reactor"' in page
+    assert 'id="orb"' in page
+
+
+def test_the_orb_has_a_setting_for_every_state():
+    """A state with no tuning falls back to idle and the face stops meaning anything."""
+    from jarvis.gui.hud import Mode
+    from jarvis.web.server import PAGE
+
+    page = PAGE.read_text()
+    tuning = page[page.index("const TUNING"):page.index("let mode =")]
+    for mode in Mode:
+        assert f"{mode.value}:" in tuning, f"the orb has no look for '{mode.value}'"
+
+
+def test_listening_is_visibly_livelier_than_idle():
+    """The whole point is answering "is it hearing me" without words."""
+    import re
+
+    from jarvis.web.server import PAGE
+
+    page = PAGE.read_text()
+    block = page[page.index("const TUNING"):page.index("let mode =")]
+
+    def value(state, key):
+        line = re.search(rf"{state}:\s*\{{([^}}]*)\}}", block).group(1)
+        return float(re.search(rf"{key}:\s*([\d.]+)", line).group(1))
+
+    for key in ("wobble", "churn", "glow"):
+        assert value("listening", key) > value("idle", key), f"{key} does not rise"
+
+
+def test_only_thinking_spawns_the_mind_particles():
+    """Showing him "working" when he is idle would be decoration pretending to be state."""
+    import re
+
+    from jarvis.web.server import PAGE
+
+    page = PAGE.read_text()
+    block = page[page.index("const TUNING"):page.index("let mode =")]
+    spawns = dict(re.findall(r"(\w+):\s*\{[^}]*spawn:\s*([\d.]+)", block))
+    assert float(spawns["thinking"]) > 0
+    for state in ("idle", "listening", "speaking", "asking"):
+        assert float(spawns[state]) == 0, f"{state} spawns particles it has not earned"
 
 
 def test_the_page_needs_nothing_from_the_internet():
