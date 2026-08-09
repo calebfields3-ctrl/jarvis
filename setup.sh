@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+#
+# One-command setup for Jarvis.
+#
+#   ./setup.sh
+#
+# Safe to run again if something goes wrong -- it skips whatever is already
+# done. Every failure prints what broke and what to do about it, rather than a
+# stack trace, because the person running this may be new to a terminal.
+
+set -u
+
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; BOLD='\033[1m'; OFF='\033[0m'
+
+say()  { printf "${GREEN}==>${OFF} %s\n" "$1"; }
+warn() { printf "${YELLOW}[!]${OFF} %s\n" "$1"; }
+die()  { printf "\n${RED}Setup stopped.${OFF}\n  %s\n\n" "$1" >&2; exit 1; }
+
+cd "$(dirname "$0")" || die "Could not find the Jarvis folder."
+
+# ---------------------------------------------------------------- 1. Python
+say "Checking Python..."
+if ! command -v python3 >/dev/null 2>&1; then
+    die "Python 3 is not installed. Run this first, then try again:
+    sudo apt update && sudo apt install -y python3 python3-venv python3-pip git"
+fi
+
+PY_OK=$(python3 -c 'import sys; print(1 if sys.version_info >= (3, 10) else 0)' 2>/dev/null || echo 0)
+if [ "$PY_OK" != "1" ]; then
+    die "Your Python is $(python3 --version 2>&1 | cut -d" " -f2), but Jarvis needs 3.10 or newer.
+    On Debian or a Chromebook, try:  sudo apt update && sudo apt install -y python3"
+fi
+say "Python $(python3 --version 2>&1 | cut -d' ' -f2) -- good."
+
+# ------------------------------------------------------- 1b. System packages
+# tkinter is not a pip package -- it ships with the system Python, and on
+# Debian it is split into python3-tk. Without it there is no window, so this
+# is worth a try even though it needs a password.
+if ! python3 -c "import tkinter" >/dev/null 2>&1; then
+    say "Installing the window toolkit (you may be asked for a password -- press Enter if you never set one)..."
+    sudo apt-get install -y python3-tk >/dev/null 2>&1 || true
+    if python3 -c "import tkinter" >/dev/null 2>&1; then
+        say "Window toolkit installed."
+    else
+        warn "Couldn't install python3-tk, so Jarvis will run in the terminal instead of a window."
+        warn "To fix it later:  sudo apt install -y python3-tk"
+    fi
+else
+    say "Window toolkit already present."
+fi
+
+# The microphone stack. pyaudio compiles against portaudio, and text-to-speech
+# needs a voice installed, so both need system packages before pip can work.
+# Every one of these is optional -- without them he falls back to typed input.
+if ! python3 -c "import speech_recognition" >/dev/null 2>&1; then
+    say "Installing microphone support (for \"hey Jarvis\")..."
+    sudo apt-get install -y portaudio19-dev python3-pyaudio espeak-ng flac >/dev/null 2>&1 || true
+fi
+
+# alsa-utils gives us `aplay`, which is how the good voice gets heard.
+if ! command -v aplay >/dev/null 2>&1 && ! command -v paplay >/dev/null 2>&1; then
+    sudo apt-get install -y alsa-utils >/dev/null 2>&1 || true
+fi
+
+# ------------------------------------------------------- 2. Virtual environment
+# A venv keeps Jarvis's packages separate from the system Python, so nothing
+# here can break anything else on the machine.
+if [ ! -d .venv ]; then
+    say "Creating the virtual environment (this keeps Jarvis self-contained)..."
+    python3 -m venv .venv 2>/dev/null || die "Could not create the virtual environment.
+    The python3-venv package is probably missing. Run:
+    sudo apt update && sudo apt install -y python3-venv"
+else
+    say "Virtual environment already exists -- reusing it."
+fi
+
+# shellcheck disable=SC1091
+. .venv/bin/activate || die "Could not activate the virtual environment. Try deleting the .venv folder and running this again."
+
+# ------------------------------------------------------------- 3. Install
+say "Installing Jarvis and his dependencies. This takes a few minutes..."
+python -m pip install --quiet --upgrade pip >/dev/null 2>&1
+
+if python -m pip install --quiet -e ".[all]" 2>/dev/null; then
+    say "Installed with live market data support."
+else
+    warn "The full install failed -- most likely no internet, or pandas could not build."
+    warn "Falling back to the core install. Jarvis still runs, using simulated prices."
+    python -m pip install --quiet -e . || die "Even the core install failed. Check your internet connection and run ./setup.sh again."
+fi
+
+# The venv's own console script. The launcher installed in step 5 is what
+# makes `jarvis` work outside this shell; this only checks the install worked.
+[ -x .venv/bin/jarvis ] || die "Jarvis installed but produced no command. Try deleting the .venv folder and running ./setup.sh again."
+
+# Voice is a separate install because pyaudio fails to build on plenty of
+# machines and it must not take the whole setup down with it.
+if python -c "import speech_recognition" >/dev/null 2>&1; then
+    say "Microphone support ready -- \"hey Jarvis\" will work."
+elif python -m pip install --quiet SpeechRecognition pyaudio pyttsx3 2>/dev/null; then
+    say "Microphone support installed -- \"hey Jarvis\" will work."
+else
+    warn "Couldn't install the microphone packages, so \"hey Jarvis\" won't work yet."
+    warn "Everything else runs -- type to him instead. To retry later:"
+    warn "    sudo apt install -y portaudio19-dev espeak-ng && pip install SpeechRecognition pyaudio pyttsx3"
+fi
+
+# --------------------------------------------------------------- 3d. His voice
+# Piper is a small neural text-to-speech model that runs offline. Without it he
+# falls back to espeak, which is intelligible and sounds like 1985.
+if python -c "import piper" >/dev/null 2>&1; then
+    say "Neural voice already installed."
+else
+    say "Installing his voice (neural, offline, sounds human)..."
+    python -m pip install --quiet piper-tts >/dev/null 2>&1 || \
+        warn "Couldn't install piper-tts -- he'll use the robotic voice instead."
+fi
+
+if python -c "import piper" >/dev/null 2>&1; then
+    if .venv/bin/jarvis voice 2>/dev/null | grep -q "none installed"; then
+        say "Downloading his voice model (about 60 MB, once)..."
+        .venv/bin/jarvis voice --install >/dev/null 2>&1 || \
+            warn "Voice download failed. Run 'jarvis voice --install' later to retry."
+    fi
+fi
+
+# --------------------------------------------------------------- 3b. The key
+# Without one of these he falls back to matching your words against a list,
+# which works but is a shadow of the real thing. Written to ~/.bashrc rather
+# than into the repo, so it never lands in git.
+if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${GEMINI_API_KEY:-}" ] \
+   && ! grep -qE "ANTHROPIC_API_KEY|GEMINI_API_KEY" "$HOME/.bashrc" 2>/dev/null; then
+    printf "\n"
+    printf "  ${BOLD}Jarvis needs an API key to think.${OFF} Two options:\n\n"
+    printf "    ${BOLD}Free${OFF}   aistudio.google.com -> Get API key   (Google account, no card)\n"
+    printf "    ${BOLD}Paid${OFF}   console.anthropic.com -> API keys    (better; a few \$ a month)\n\n"
+    printf "  Paste either one, or press Enter to skip (he still runs, less cleverly).\n\n"
+    printf "  Key: "
+    read -r JARVIS_KEY </dev/tty || JARVIS_KEY=""
+    if [ -n "$JARVIS_KEY" ]; then
+        case "$JARVIS_KEY" in
+            sk-*)   JARVIS_VAR="ANTHROPIC_API_KEY" ;;
+            AIza*)  JARVIS_VAR="GEMINI_API_KEY" ;;
+            *)      JARVIS_VAR="" ;;
+        esac
+        if [ -n "$JARVIS_VAR" ]; then
+            printf "export %s=%s\n" "$JARVIS_VAR" "$JARVIS_KEY" >> "$HOME/.bashrc"
+            export "$JARVIS_VAR=$JARVIS_KEY"
+            say "Key saved. New terminals will have it."
+        else
+            warn "That did not look like either kind of key -- nothing saved."
+            warn "Anthropic keys start with 'sk-', Google keys with 'AIza'. Run 'jarvis key' to retry."
+        fi
+    else
+        warn "No key. Jarvis will use his built-in routing. Run 'jarvis key' to add one."
+    fi
+fi
+
+# ------------------------------------------------------------- 4. Bootstrap
+# Without a track record he reports every setup as untested, which is a poor
+# and misleading first impression.
+if .venv/bin/jarvis status 2>/dev/null | grep -q "Graded calls     : 0"; then
+    say "Building his track record from historical data (about 30 seconds)..."
+    .venv/bin/jarvis bootstrap --sample 30 >/dev/null 2>&1 || warn "Bootstrap did not finish. Run 'jarvis bootstrap' yourself later."
+else
+    say "Track record already built -- skipping."
+fi
+
+# --------------------------------------------------------- 5. The `jarvis` command
+# "command not found" is the single most common way this fails, and every
+# previous fix here depended on the shell cooperating: activating the venv by
+# hand, or a line in ~/.bashrc that only applies to a brand new terminal and
+# silently does nothing if anything is off.
+#
+# A launcher script depends on none of that. It hard-codes the path to the
+# venv's Python, so `jarvis` works from any directory, in any terminal, with
+# nothing sourced and nothing activated.
+LAUNCHER_DIR="$HOME/.local/bin"
+mkdir -p "$LAUNCHER_DIR"
+cat > "$LAUNCHER_DIR/jarvis" <<LAUNCHER
+#!/usr/bin/env bash
+# Written by Jarvis setup.sh. Runs him from anywhere, no venv activation.
+exec "$(pwd)/.venv/bin/python" -m jarvis.cli "\$@"
+LAUNCHER
+chmod +x "$LAUNCHER_DIR/jarvis"
+say "Installed the 'jarvis' command to $LAUNCHER_DIR."
+
+# ~/.local/bin is on the PATH by default on Debian, but only once it exists at
+# login -- which it may not have when this shell started. Adding it is
+# idempotent and fixes the case where it is missing entirely.
+if ! printf '%s' "$PATH" | tr ':' '\n' | grep -Fqx "$LAUNCHER_DIR"; then
+    if ! grep -Fq 'HOME/.local/bin' "$HOME/.bashrc" 2>/dev/null; then
+        printf '\n# Added by Jarvis setup.sh\nexport PATH="$HOME/.local/bin:$PATH"\n' \
+            >> "$HOME/.bashrc"
+    fi
+    export PATH="$LAUNCHER_DIR:$PATH"
+    say "Added $LAUNCHER_DIR to your PATH."
+fi
+
+# Older versions of this script made every new terminal cd into the Jarvis
+# folder. That is no longer needed and is a surprising thing to leave behind.
+if grep -Fq "source .venv/bin/activate" "$HOME/.bashrc" 2>/dev/null; then
+    sed -i '/# Added by Jarvis setup.sh -- start new shells ready to go/d' "$HOME/.bashrc"
+    sed -i '\|source .venv/bin/activate|d' "$HOME/.bashrc"
+    say "Cleaned up the old auto-activation line."
+fi
+
+command -v jarvis >/dev/null 2>&1 || warn "The 'jarvis' command still is not on your PATH. Run it directly with: $LAUNCHER_DIR/jarvis"
+
+# Typing "hey jarvis" at the shell prompt is the obvious thing to try, and it
+# gets you "hey: command not found" -- which reads like Jarvis is broken when
+# he simply was not running. Making the obvious thing work is cheaper than
+# explaining why it doesn't.
+if ! grep -Fq "Jarvis: make 'hey jarvis' work" "$HOME/.bashrc" 2>/dev/null; then
+    cat >> "$HOME/.bashrc" <<'HEY'
+
+# Jarvis: make 'hey jarvis' work at the prompt, not just at the microphone
+hey() { jarvis; }
+HEY
+    say "You can now type 'hey jarvis' at the prompt too."
+fi
+
+# ---------------------------------------------------------------- 6. Done
+printf "\n${GREEN}${BOLD}Jarvis is ready.${OFF}\n\n"
+printf "  ${BOLD}Start him with this, right now:${OFF}\n\n"
+printf "    ${BOLD}./run${OFF}\n\n"
+printf "  Then say ${BOLD}\"hey Jarvis\"${OFF} out loud, or type in the box.\n\n"
+printf "  ${BOLD}./run${OFF} works from this folder in any terminal, with nothing\n"
+printf "  activated. (${BOLD}jarvis${OFF} works too, but only in a NEW terminal.)\n\n"
+printf "  Other things he does:\n\n"
+printf "    ${BOLD}./run key${OFF}         set the key that makes him smart\n"
+printf "    ${BOLD}./run doctor${OFF}      check what is working\n"
+printf "    ${BOLD}./run brief${OFF}       pre-market briefing\n"
+printf "    ${BOLD}./run train${OFF}       he teaches you to day trade\n"
+printf "    ${BOLD}./run daytrade${OFF}    intraday setups right now\n\n"
+printf "  Add your money and positions when you are ready:\n\n"
+printf "    ${BOLD}jarvis deposit 500${OFF}\n"
+printf "    ${BOLD}jarvis buy AAPL 2 182.30${OFF}\n\n"

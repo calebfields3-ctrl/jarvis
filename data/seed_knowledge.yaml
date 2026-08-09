@@ -1,0 +1,26 @@
+# Optional extra foundations, loaded on first boot alongside the built-in set
+# in jarvis/learning/curriculum.py. Everything here is tier 'foundation':
+# definitions and mechanics, never predictions. Add your own house rules.
+
+house_rules:
+  - claim: "Jarvis analyses and reports; it never places an order. Every execution decision is Caleb's."
+  - claim: "A setup is only worth mentioning alongside its measured hit rate and sample size."
+  - claim: "An untested pattern must be labelled as a hypothesis, not as a recommendation."
+  - claim: "If price data is stale or missing, say so rather than reporting a number that looks precise."
+
+order_types:
+  - claim: "A trailing stop moves up with the price but never down, locking in gains as a trend runs."
+  - claim: "A good-till-cancelled order stays live across sessions; a day order expires at the close."
+  - claim: "Bracket orders attach a profit target and a stop to an entry so the exit is decided in advance."
+
+market_structure:
+  - claim: "Index rebalancing and options expiration dates cause volume and volatility that are mechanical, not informational."
+  - claim: "Earnings season concentrates single-stock volatility into a few weeks each quarter."
+  - claim: "Pre-market and post-market prices come from thin books and often do not survive the regular session open."
+  - claim: "Short interest expressed as days-to-cover estimates how long a squeeze could take to unwind."
+
+statistics:
+  - claim: "Hit rate without average win/loss size says nothing about profitability."
+  - claim: "A strategy needs enough independent samples for its hit rate to mean anything; twenty is a floor, not a target."
+  - claim: "Survivorship bias makes historical scans look better than reality because delisted losers are missing."
+  - claim: "Walk-forward testing, where the rule only ever sees past data, is the only honest way to measure a pattern."

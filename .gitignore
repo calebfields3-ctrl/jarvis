@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.jarvis/
+*.db
+*.db-wal
+*.db-shm
+
+.jarvis/

@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J.A.R.V.I.S.</title>
+<style>
+/* One file, no CDN, no build step. Jarvis has to install on a machine where
+   pip sometimes cannot reach the network; a face that needs a download is
+   not a face you can rely on. */
+:root {
+  --bg: #05070c;
+  --panel: rgba(18, 26, 38, 0.62);
+  --edge: rgba(94, 234, 255, 0.14);
+  --cyan: #4fe3ff;
+  --cyan-dim: rgba(79, 227, 255, 0.5);
+  --pale: #dff6ff;
+  --muted: #7f95a8;
+  --amber: #ffb347;
+  --red: #ff6b6b;
+  --green: #57e6a5;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--pale);
+  font: 15px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Two soft pools of light rather than a flat black rectangle. Depth is
+     most of what separates "modern" from "a terminal with colours". */
+  background-image:
+    radial-gradient(1100px 620px at 50% -12%, rgba(37, 99, 135, 0.30), transparent 62%),
+    radial-gradient(760px 520px at 88% 108%, rgba(24, 61, 92, 0.34), transparent 60%);
+}
+
+/* ----------------------------------------------------------------- the orb */
+#stage {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18px 20px 6px;
+}
+
+/* Everything here is drawn on a canvas rather than built out of elements.
+   The thinking state needs a few dozen particles with lines between them,
+   redrawn every frame -- as DOM nodes that is a repaint storm, and on a
+   Chromebook it would stutter exactly when he is busy. */
+#orb { display: block; width: 260px; height: 220px; }
+
+#status {
+  margin-top: 2px;
+  font-size: 11.5px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  min-height: 18px;
+}
+#status::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--cyan);
+  vertical-align: middle;
+  box-shadow: 0 0 10px var(--cyan);
+  animation: blink 2.4s ease-in-out infinite;
+}
+@keyframes blink { 50% { opacity: .25; } }
+
+/* The one state that needs Caleb is the one thing that is not cyan. */
+body[data-mode="asking"] { --cyan: var(--amber); --cyan-dim: rgba(255, 179, 71, .55); }
+
+/* ---------------------------------------------------------- the transcript */
+#log {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 8px 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 227, 255, .22) transparent;
+}
+#log::-webkit-scrollbar { width: 8px; }
+#log::-webkit-scrollbar-thumb {
+  background: rgba(79, 227, 255, .22); border-radius: 4px;
+}
+
+.msg {
+  max-width: min(780px, 92%);
+  padding: 11px 16px;
+  border-radius: 16px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  animation: rise .22s ease-out;
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(7px); } }
+
+.jarvis {
+  align-self: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-left: 2px solid var(--cyan);
+}
+.caleb {
+  align-self: flex-end;
+  background: rgba(79, 227, 255, .10);
+  border: 1px solid rgba(79, 227, 255, .22);
+  color: #fff;
+}
+.note {
+  align-self: center;
+  background: rgba(255, 179, 71, .09);
+  border: 1px solid rgba(255, 179, 71, .26);
+  color: #ffd9a3;
+  font-size: 13.5px;
+}
+/* Tool calls are a running log, not conversation -- monospace, small, quiet,
+   but always visible. It is the only live view of a thing holding a shell. */
+.tool {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 1px 6px;
+  font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  backdrop-filter: none;
+}
+.tool::before { content: "› "; color: var(--cyan-dim); }
+.tool.bad { color: var(--red); }
+.tool.bad::before { content: "× "; color: var(--red); }
+
+/* ------------------------------------------------------------- the composer */
+#composer {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 10px;
+  padding: 14px 22px 22px;
+  border-top: 1px solid rgba(79, 227, 255, .08);
+}
+#input {
+  flex: 1;
+  background: rgba(12, 20, 30, .8);
+  border: 1px solid var(--edge);
+  border-radius: 13px;
+  padding: 13px 17px;
+  color: var(--pale);
+  font: inherit;
+  outline: none;
+  transition: border-color .18s, box-shadow .18s;
+}
+#input::placeholder { color: #56697a; }
+#input:focus {
+  border-color: rgba(79, 227, 255, .45);
+  box-shadow: 0 0 0 3px rgba(79, 227, 255, .09);
+}
+#send {
+  background: rgba(79, 227, 255, .13);
+  border: 1px solid rgba(79, 227, 255, .3);
+  border-radius: 13px;
+  color: var(--cyan);
+  padding: 0 22px;
+  font: 600 14px/1 inherit;
+  cursor: pointer;
+  transition: background .18s;
+}
+#send:hover { background: rgba(79, 227, 255, .22); }
+
+/* -------------------------------------------------------------- approval */
+#veil {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 6, 11, .74);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 10;
+}
+#veil.on { display: flex; }
+#ask {
+  max-width: 520px;
+  width: 100%;
+  background: rgba(20, 28, 40, .97);
+  border: 1px solid rgba(255, 179, 71, .34);
+  border-radius: 20px;
+  padding: 26px 28px;
+  animation: rise .2s ease-out;
+}
+#ask h2 {
+  font-size: 12px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin-bottom: 14px;
+}
+#ask-action {
+  font: 13.5px/1.55 ui-monospace, Menlo, monospace;
+  background: rgba(0, 0, 0, .34);
+  border-radius: 11px;
+  padding: 12px 14px;
+  word-break: break-all;
+  margin-bottom: 12px;
+}
+#ask-reason { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+.row { display: flex; gap: 10px; justify-content: flex-end; }
+.btn {
+  border-radius: 11px;
+  padding: 11px 22px;
+  font: 600 14px/1 inherit;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.no  { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.15); color: var(--pale); }
+.yes { background: rgba(255, 179, 71, .17); border-color: rgba(255, 179, 71, .45); color: #ffcf8a; }
+.no:hover  { background: rgba(255,255,255,.11); }
+.yes:hover { background: rgba(255, 179, 71, .27); }
+
+#offline {
+  display: none;
+  text-align: center;
+  padding: 9px;
+  background: rgba(255, 107, 107, .13);
+  color: #ffb0b0;
+  font-size: 13px;
+}
+#offline.on { display: block; }
+
+@media (max-width: 560px) {
+  #orb { width: 190px; height: 165px; }
+  #stage { padding-top: 12px; }
+  .msg { max-width: 96%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #orb { opacity: .85; }
+}
+</style>
+</head>
+<body data-mode="idle">
+
+<div id="offline">Jarvis has stopped. Close this tab, or start him again in the Terminal.</div>
+
+<div id="stage">
+  <canvas id="orb" aria-hidden="true"></canvas>
+  <div id="status">standing by</div>
+</div>
+
+<div id="log"></div>
+
+<form id="composer" autocomplete="off">
+  <input id="input" placeholder="Say something, or just talk to him out loud…" autofocus>
+  <button id="send" type="submit">Send</button>
+</form>
+
+<div id="veil">
+  <div id="ask" role="dialog" aria-modal="true">
+    <h2>Jarvis needs your say-so</h2>
+    <div id="ask-action"></div>
+    <div id="ask-reason"></div>
+    <div class="row">
+      <button class="btn no"  id="deny">No</button>
+      <button class="btn yes" id="allow">Allow</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ------------------------------------------------------------------ the orb
+   A blob rather than a machine. Its outline is a sum of a few sine waves at
+   different frequencies, which is what stops it reading as a circle -- a
+   circle is a shape, and this is supposed to look like something alive.
+
+   Each state changes the same three numbers, so the transitions are smooth
+   rather than cuts:
+     wobble   how far the outline strays from round
+     churn    how fast it moves
+     glow     how bright the whole thing is
+
+   Thinking also spawns particles that drift and draw lines to their near
+   neighbours. That is the "you can see it piece things together" part, and
+   it is honest -- it only happens while he is actually working. */
+const canvas = document.getElementById('orb');
+const ctx = canvas.getContext('2d');
+
+let W = 0, H = 0, CX = 0, CY = 0, R = 0;
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const rect = canvas.getBoundingClientRect();
+  W = rect.width; H = rect.height;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  CX = W / 2; CY = H / 2;
+  R = Math.min(W, H) * 0.27;
+}
+window.addEventListener('resize', resize);
+
+// Read the palette from CSS so the amber "needs your say-so" state changes
+// the orb too, without the colour being written down in two places.
+function palette() {
+  const style = getComputedStyle(document.body);
+  return (style.getPropertyValue('--cyan') || '#4fe3ff').trim();
+}
+
+const TUNING = {
+  idle:      { wobble: 0.055, churn: 0.30, glow: 0.62, spawn: 0 },
+  listening: { wobble: 0.150, churn: 1.30, glow: 1.00, spawn: 0 },
+  thinking:  { wobble: 0.090, churn: 0.75, glow: 0.82, spawn: 1.7 },
+  speaking:  { wobble: 0.210, churn: 1.05, glow: 0.96, spawn: 0 },
+  asking:    { wobble: 0.070, churn: 0.45, glow: 0.95, spawn: 0 },
+};
+
+let mode = 'idle';
+// Eased towards the target every frame, so switching state is a surge and
+// not a jump cut.
+let cur = {...TUNING.idle};
+let t = 0;
+const particles = [];
+const ripples = [];
+
+function setMode(next) {
+  if (next === mode) return;
+  if (next === 'listening') ripples.push({r: R * 0.7, life: 1});
+  mode = next;
+}
+
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [79,227,255];
+}
+
+function frame() {
+  requestAnimationFrame(frame);
+  if (!W) resize();
+
+  const target = TUNING[mode] || TUNING.idle;
+  for (const key of ['wobble', 'churn', 'glow', 'spawn']) {
+    cur[key] += (target[key] - cur[key]) * 0.06;
+  }
+  t += 0.016 * (0.6 + cur.churn);
+
+  const [r, g, b] = hexToRgb(palette());
+  const rgba = (a) => `rgba(${r},${g},${b},${a})`;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // --- the mind: particles, and lines between the near ones ---------------
+  if (Math.random() < cur.spawn * 0.5 && particles.length < 54) {
+    const angle = Math.random() * Math.PI * 2;
+    particles.push({
+      a: angle,
+      d: R * (0.75 + Math.random() * 0.35),
+      va: (Math.random() - 0.5) * 0.012,
+      vd: (Math.random() - 0.5) * 0.35,
+      life: 1,
+    });
+  }
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.a += p.va; p.d += p.vd;
+    p.life -= 0.006;
+    if (p.life <= 0 || p.d < R * 0.4 || p.d > R * 2.4) particles.splice(i, 1);
+  }
+  const points = particles.map(p => ({
+    x: CX + Math.cos(p.a) * p.d,
+    y: CY + Math.sin(p.a) * p.d,
+    life: p.life,
+  }));
+  ctx.lineWidth = 1;
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const dx = points[i].x - points[j].x, dy = points[i].y - points[j].y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < R * 0.62) {
+        const strength = (1 - dist / (R * 0.62)) * Math.min(points[i].life, points[j].life);
+        ctx.strokeStyle = rgba(strength * 0.30);
+        ctx.beginPath();
+        ctx.moveTo(points[i].x, points[i].y);
+        ctx.lineTo(points[j].x, points[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+  for (const p of points) {
+    ctx.fillStyle = rgba(p.life * 0.75);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // --- ripples, when he starts listening ----------------------------------
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const w = ripples[i];
+    w.r += 1.7; w.life -= 0.014;
+    if (w.life <= 0) { ripples.splice(i, 1); continue; }
+    ctx.strokeStyle = rgba(w.life * 0.34);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(CX, CY, w.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (mode === 'listening' && Math.random() < 0.03) ripples.push({r: R * 0.75, life: 1});
+
+  // --- the blob -----------------------------------------------------------
+  // Three harmonics at unrelated speeds: enough to look organic, few enough
+  // that the shape never becomes noise.
+  const edge = (angle) => R * (1
+    + cur.wobble * Math.sin(angle * 3 + t * 1.7)
+    + cur.wobble * 0.62 * Math.sin(angle * 5 - t * 1.1)
+    + cur.wobble * 0.40 * Math.sin(angle * 2 + t * 2.3));
+
+  ctx.save();
+  ctx.shadowBlur = 46 * cur.glow;
+  ctx.shadowColor = rgba(0.55 * cur.glow);
+
+  ctx.beginPath();
+  for (let i = 0; i <= 84; i++) {
+    const angle = (i / 84) * Math.PI * 2;
+    const rad = edge(angle);
+    const x = CX + Math.cos(angle) * rad, y = CY + Math.sin(angle) * rad;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+
+  const fill = ctx.createRadialGradient(CX, CY - R * 0.22, R * 0.05, CX, CY, R * 1.25);
+  fill.addColorStop(0,    `rgba(255,255,255,${0.90 * cur.glow})`);
+  fill.addColorStop(0.30, rgba(0.80 * cur.glow));
+  fill.addColorStop(0.72, rgba(0.20 * cur.glow));
+  fill.addColorStop(1,    rgba(0));
+  ctx.fillStyle = fill;
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = rgba(0.42 * cur.glow);
+  ctx.lineWidth = 1.1;
+  ctx.stroke();
+  ctx.restore();
+
+  // A second, slower outline just outside it -- the suggestion of a shell.
+  ctx.strokeStyle = rgba(0.13 * cur.glow);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= 60; i++) {
+    const angle = (i / 60) * Math.PI * 2;
+    const rad = R * 1.42 + Math.sin(angle * 4 - t * 0.8) * R * cur.wobble * 0.5;
+    const x = CX + Math.cos(angle) * rad, y = CY + Math.sin(angle) * rad;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+}
+resize();
+requestAnimationFrame(frame);
+
+const log = document.getElementById('log');
+const input = document.getElementById('input');
+const veil = document.getElementById('veil');
+
+let seen = -1;        // last rendered version
+let pendingId = null;
+let misses = 0;
+
+function draw(state) {
+  document.body.dataset.mode = state.mode || 'idle';
+  setMode(state.pending ? 'asking' : (state.mode || 'idle'));
+  document.getElementById('status').textContent = state.status || '';
+  document.title = state.mode === 'listening' ? '● listening — J.A.R.V.I.S.'
+                                              : 'J.A.R.V.I.S.';
+
+  // Re-rendering the whole log is fine at this size and avoids a class of
+  // bug where the incremental path and the state drift apart.
+  const stuck = log.scrollHeight - log.scrollTop - log.clientHeight < 90;
+  log.innerHTML = '';
+  for (const line of state.lines) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + (line.who === 'tool'
+      ? 'tool' + (line.ok ? '' : ' bad')
+      : line.who);
+    el.textContent = line.text;
+    log.appendChild(el);
+  }
+  if (stuck) log.scrollTop = log.scrollHeight;
+
+  if (state.pending) {
+    pendingId = state.pending.id;
+    document.getElementById('ask-action').textContent = state.pending.action;
+    document.getElementById('ask-reason').textContent = state.pending.reason;
+    veil.classList.add('on');
+  } else {
+    pendingId = null;
+    veil.classList.remove('on');
+  }
+}
+
+async function poll() {
+  try {
+    const res = await fetch('/api/state');
+    const state = await res.json();
+    misses = 0;
+    document.getElementById('offline').classList.remove('on');
+    if (state.version !== seen) { seen = state.version; draw(state); }
+  } catch (err) {
+    // A couple of missed polls is a slow turn, not a dead server. Only say
+    // he has stopped once it is actually true.
+    if (++misses > 6) document.getElementById('offline').classList.add('on');
+  }
+}
+setInterval(poll, 400);
+poll();
+
+document.getElementById('composer').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  await fetch('/api/say', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text}),
+  });
+  poll();
+});
+
+async function answer(approved) {
+  if (!pendingId) return;
+  await fetch('/api/approve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: pendingId, approved}),
+  });
+  veil.classList.remove('on');
+  poll();
+}
+document.getElementById('allow').addEventListener('click', () => answer(true));
+document.getElementById('deny').addEventListener('click', () => answer(false));
+// Escape denies. The safe answer should be the easy one.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && pendingId) answer(false);
+});
+</script>
+</body>
+</html>

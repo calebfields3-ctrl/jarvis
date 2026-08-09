@@ -1,0 +1,59 @@
+# Global news stations Jarvis monitors continuously for market-moving events.
+# Every feed host must also pass the safety allowlist in jarvis/safety/url_safety.py.
+# Add or remove freely -- Jarvis reloads this file on boot.
+
+wires:
+  - name: "Reuters Business"
+    url: "https://www.reuters.com/arc/outboundfeeds/rss/category/business/?outputType=xml"
+    region: global
+  - name: "Reuters Markets"
+    url: "https://www.reuters.com/arc/outboundfeeds/rss/category/markets/?outputType=xml"
+    region: global
+  - name: "AP Business"
+    url: "https://rsshub.app/apnews/topics/business"
+    region: global
+
+us:
+  - name: "CNBC Top News"
+    url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"
+    region: us
+  - name: "CNBC Markets"
+    url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258"
+    region: us
+  - name: "CNBC Economy"
+    url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258"
+    region: us
+  - name: "MarketWatch Top Stories"
+    url: "https://feeds.content.dowjones.io/public/rss/mw_topstories"
+    region: us
+  - name: "MarketWatch Real-time Headlines"
+    url: "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines"
+    region: us
+  - name: "NPR Business"
+    url: "https://feeds.npr.org/1006/rss.xml"
+    region: us
+  - name: "Yahoo Finance"
+    url: "https://finance.yahoo.com/news/rssindex"
+    region: us
+
+international:
+  - name: "BBC Business"
+    url: "https://feeds.bbci.co.uk/news/business/rss.xml"
+    region: uk
+  - name: "BBC World"
+    url: "https://feeds.bbci.co.uk/news/world/rss.xml"
+    region: global
+  - name: "Guardian Business"
+    url: "https://www.theguardian.com/uk/business/rss"
+    region: uk
+
+official:
+  - name: "Federal Reserve Press Releases"
+    url: "https://www.federalreserve.gov/feeds/press_all.xml"
+    region: us
+  - name: "SEC Press Releases"
+    url: "https://www.sec.gov/news/pressreleases.rss"
+    region: us
+  - name: "Bureau of Labor Statistics"
+    url: "https://www.bls.gov/feed/bls_latest.rss"
+    region: us

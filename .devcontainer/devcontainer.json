@@ -1,0 +1,30 @@
+{
+  "name": "Jarvis",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+
+  // Runs once when the Codespace is built, so Jarvis is ready the moment the
+  // terminal appears. Bootstrap is included because without a track record he
+  // reports every setup as untested, which is a poor first impression.
+  "postCreateCommand": "pip install --user -e '.[all]' && jarvis bootstrap --sample 30 && jarvis deposit 25000",
+
+  // Printed every time you attach, including on a phone where the README is
+  // not visible next to the terminal.
+  "postAttachCommand": {
+    "hello": "echo '\\n  Jarvis is ready.\\n\\n    jarvis            the full thing (no window here -- runs in this terminal)\\n    jarvis brief      pre-market briefing\\n    jarvis daytrade   intraday setups\\n    jarvis review     coaching on your trades\\n\\n  Set ANTHROPIC_API_KEY as a Codespaces secret to give him a mind.\\n'"
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  "remoteEnv": {
+    // Memory lives in the workspace rather than the container home, so it
+    // survives the Codespace being stopped and restarted.
+    "JARVIS_HOME": "${containerWorkspaceFolder}/.jarvis"
+  }
+}
