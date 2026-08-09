@@ -52,12 +52,15 @@ def check_python() -> Check:
 
 def check_mind() -> Check:
     """The one that decides whether he can answer anything, or only finance."""
+    gemini = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
     key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key and gemini:
+        return Check("his mind (API key)", OK, f"Gemini, free tier ({gemini[:6]}...{gemini[-4:]})")
     if not key:
         return Check(
             "his mind (API key)", FAIL,
             "not set -- he can only answer finance questions from his built-in list",
-            "cd ~/jarvis && ./setup.sh     (paste your key when it asks)",
+            "jarvis key      (takes a free Google key or a paid Anthropic one)",
         )
     if not key.startswith("sk-"):
         return Check(
@@ -75,9 +78,43 @@ def check_mind() -> Check:
     return Check("his mind (API key)", OK, f"set ({key[:7]}...{key[-4:]})")
 
 
+def check_gemini_reaches_google() -> Check:
+    """Prove the free key actually answers, not merely that it is set."""
+    import json
+    import urllib.request
+
+    key = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
+    if not key:
+        return Check("can he think", FAIL, "no Gemini key set", "jarvis key")
+
+    from jarvis.agent.gemini import API_ROOT
+
+    try:
+        with urllib.request.urlopen(f"{API_ROOT}/models?key={key}", timeout=25) as response:
+            catalogue = json.loads(response.read().decode())
+    except Exception as exc:
+        text = str(exc)
+        if "403" in text or "400" in text:
+            return Check(
+                "can he think", FAIL, "Google rejected that key",
+                "Make a new one at aistudio.google.com -> Get API key",
+            )
+        return Check("can he think", FAIL, text[:120], "Check your internet connection")
+
+    count = len(catalogue.get("models") or [])
+    if not count:
+        return Check(
+            "can he think", FAIL, "the key works but no models are available",
+            "Check the key has the Generative Language API enabled",
+        )
+    return Check("can he think", OK, f"Gemini answered -- {count} models available")
+
+
 def check_mind_reaches_anthropic() -> Check:
     """A key that is set but rejected looks identical to no key at all."""
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        if (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip():
+            return check_gemini_reaches_google()
         return Check("can he think", FAIL, "no key to try", "see above")
     try:
         import anthropic

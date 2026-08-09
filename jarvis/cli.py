@@ -210,36 +210,55 @@ def cmd_voice(args, jarvis: Jarvis) -> int:
 
 
 def cmd_key(args, jarvis: Jarvis) -> int:
-    """Set the API key, check it actually works, and save it. One step.
+    """Set an API key, prove it works, and save it. Either provider.
 
-    `./setup.sh` asks for this too, but only on a fresh run -- and getting it
-    wrong there means a silent fall back to the finance-only router, which
-    looks like Jarvis being stupid rather than Jarvis being switched off.
+    Which provider is worked out from the key itself rather than asked
+    about: Anthropic keys start with `sk-`, Google's with `AIza`. Making
+    someone choose between two things they have not used yet is a question
+    with no good answer.
     """
     import os
     from pathlib import Path
 
     key = (args.key or "").strip()
     if not key:
-        print("\n  Get a key at console.anthropic.com -> API keys ($5 of credit is plenty).")
+        print()
+        print("  Two options, and you only need one:")
+        print()
+        print("    Free    aistudio.google.com -> Get API key    (Google account, no card)")
+        print("    Paid    console.anthropic.com -> API keys     (better; a few $ a month)")
+        print()
         try:
-            key = input("  Paste it here: ").strip()
+            key = input("  Paste either key here: ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return 1
     if not key:
         print("  Nothing pasted. Nothing changed.")
         return 1
-    if not key.startswith("sk-"):
-        print("\n  That doesn't look like an Anthropic key -- they start with 'sk-'.")
-        print("  Nothing saved. Try again with the key from console.anthropic.com.\n")
+
+    if key.startswith("sk-"):
+        variable, provider = "ANTHROPIC_API_KEY", "Claude"
+    elif key.startswith("AIza"):
+        variable, provider = "GEMINI_API_KEY", "Gemini"
+    else:
+        print()
+        print("  That doesn't look like either kind of key.")
+        print("    Anthropic keys start with 'sk-'")
+        print("    Google keys start with 'AIza'")
+        print("  Nothing saved.")
+        print()
         return 1
 
-    print("\n  Checking it with Anthropic...")
-    os.environ["ANTHROPIC_API_KEY"] = key
-    from jarvis.doctor import check_mind_reaches_anthropic
+    print(f"\n  Looks like a {provider} key. Checking it works...")
+    os.environ[variable] = key
 
-    verdict = check_mind_reaches_anthropic()
+    if provider == "Claude":
+        from jarvis.doctor import check_mind_reaches_anthropic as verify
+    else:
+        from jarvis.doctor import check_gemini_reaches_google as verify
+
+    verdict = verify()
     if verdict.status != "ok":
         print(f"  That key didn't work: {verdict.detail}")
         if verdict.fix:
@@ -249,11 +268,11 @@ def cmd_key(args, jarvis: Jarvis) -> int:
 
     profile = Path.home() / ".bashrc"
     existing = profile.read_text() if profile.exists() else ""
-    lines = [ln for ln in existing.splitlines() if "ANTHROPIC_API_KEY" not in ln]
-    lines.append(f"export ANTHROPIC_API_KEY={key}")
+    lines = [ln for ln in existing.splitlines() if variable not in ln]
+    lines.append(f"export {variable}={key}")
     profile.write_text("\n".join(lines) + "\n")
 
-    print("  It works. Saved.\n")
+    print(f"  It works. Saved -- he'll use {provider} from now on.\n")
     print("  Close this Terminal, open a new one, and run:  jarvis\n")
     return 0
 

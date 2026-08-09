@@ -155,14 +155,22 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[all]"     # or: pip install -r requirements.txt
 ```
 
-Then set the key that gives him a mind:
+Then give him a mind. Either provider works:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...      # console.anthropic.com -> API keys
+jarvis key      # paste a Google or an Anthropic key; it works out which
 ```
 
-`./setup.sh` asks for this and writes it to your shell profile for you. A few
-dollars a month covers normal use.
+- **Free** — `aistudio.google.com` → Get API key. No card. Gemini, on its
+  free tier.
+- **Paid** — `console.anthropic.com` → API keys. Claude Opus 5, better
+  answers, a few dollars a month.
+
+Claude is used when its key is present, Gemini otherwise. The tools, the
+prompt, the permission engine and the safety layer are identical either way —
+only the model behind them changes. `jarvis key` verifies the key against the
+provider before saving it, because a key that is set but rejected looks
+exactly like no key at all.
 
 He speaks through Piper — a small neural text-to-speech model that runs
 offline, no API and no key. `jarvis voice --install` fetches a British male
@@ -504,7 +512,9 @@ All optional; all read from the environment.
 | `JARVIS_USE_NAME` | `1` to have him say your actual name instead of the honorific |
 | `JARVIS_SPOKEN_NAME` | Phonetic respelling for speech only, e.g. `Kayleb` |
 | `JARVIS_WINDOW` | `0` to stay in the terminal instead of popping a window up |
-| `ANTHROPIC_API_KEY` | **His mind.** Without it he falls back to the built-in router |
+| `ANTHROPIC_API_KEY` | **His mind.** Claude, used first when present |
+| `GEMINI_API_KEY` | **His mind, free.** Used when there's no Anthropic key |
+| `JARVIS_GEMINI_MODEL` | Pin a Gemini model; otherwise he asks the API what exists |
 | `JARVIS_EFFORT` | How hard he thinks: `low`…`max` (default `medium`) |
 | `JARVIS_VOICE` | `1` to enable microphone and speech |
 | `PICOVOICE_ACCESS_KEY` | On-device wake word |

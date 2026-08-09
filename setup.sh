@@ -125,22 +125,34 @@ if python -c "import piper" >/dev/null 2>&1; then
 fi
 
 # --------------------------------------------------------------- 3b. The key
-# Without this he falls back to matching your words against a list, which
-# works but is a shadow of the real thing. The key is written to ~/.bashrc
-# rather than into the repo, so it never lands in git.
-if [ -z "${ANTHROPIC_API_KEY:-}" ] && ! grep -q "ANTHROPIC_API_KEY" "$HOME/.bashrc" 2>/dev/null; then
+# Without one of these he falls back to matching your words against a list,
+# which works but is a shadow of the real thing. Written to ~/.bashrc rather
+# than into the repo, so it never lands in git.
+if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${GEMINI_API_KEY:-}" ] \
+   && ! grep -qE "ANTHROPIC_API_KEY|GEMINI_API_KEY" "$HOME/.bashrc" 2>/dev/null; then
     printf "\n"
-    printf "  ${BOLD}Jarvis needs an Anthropic API key to think.${OFF}\n"
-    printf "  Get one at ${BOLD}console.anthropic.com${OFF} -> API keys. Costs a few dollars a month.\n"
-    printf "  Paste it here, or just press Enter to skip (he still runs, less cleverly).\n\n"
+    printf "  ${BOLD}Jarvis needs an API key to think.${OFF} Two options:\n\n"
+    printf "    ${BOLD}Free${OFF}   aistudio.google.com -> Get API key   (Google account, no card)\n"
+    printf "    ${BOLD}Paid${OFF}   console.anthropic.com -> API keys    (better; a few \$ a month)\n\n"
+    printf "  Paste either one, or press Enter to skip (he still runs, less cleverly).\n\n"
     printf "  Key: "
     read -r JARVIS_KEY </dev/tty || JARVIS_KEY=""
     if [ -n "$JARVIS_KEY" ]; then
-        printf "export ANTHROPIC_API_KEY=%s\n" "$JARVIS_KEY" >> "$HOME/.bashrc"
-        export ANTHROPIC_API_KEY="$JARVIS_KEY"
-        say "Key saved. New terminals will have it."
+        case "$JARVIS_KEY" in
+            sk-*)   JARVIS_VAR="ANTHROPIC_API_KEY" ;;
+            AIza*)  JARVIS_VAR="GEMINI_API_KEY" ;;
+            *)      JARVIS_VAR="" ;;
+        esac
+        if [ -n "$JARVIS_VAR" ]; then
+            printf "export %s=%s\n" "$JARVIS_VAR" "$JARVIS_KEY" >> "$HOME/.bashrc"
+            export "$JARVIS_VAR=$JARVIS_KEY"
+            say "Key saved. New terminals will have it."
+        else
+            warn "That did not look like either kind of key -- nothing saved."
+            warn "Anthropic keys start with 'sk-', Google keys with 'AIza'. Run 'jarvis key' to retry."
+        fi
     else
-        warn "No key. Jarvis will use his built-in routing. Run ./setup.sh again to add one."
+        warn "No key. Jarvis will use his built-in routing. Run 'jarvis key' to add one."
     fi
 fi
 

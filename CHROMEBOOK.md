@@ -106,11 +106,10 @@ That last one does all the real work and takes a few minutes. It checks your
 Python, builds a sealed environment, installs everything, and then spends about
 30 seconds building Jarvis's track record from historical market data.
 
-**Partway through it asks for an Anthropic API key.** This is what gives him a
-mind instead of a lookup table — with it he can actually think, use your
-computer, and answer things nobody wrote an answer for. See *Getting the key*
+**Partway through it asks for an API key.** This is what gives him a mind
+instead of a lookup table. **The free one works** — see *Getting the key*
 below. You can press Enter to skip it; he still runs, just less cleverly, and
-you can add it later by running `./setup.sh` again.
+you can add it later with `jarvis key`.
 
 If anything goes wrong it stops and tells you exactly what to do. **Running
 `./setup.sh` again is always safe** — it skips whatever already worked.
@@ -121,15 +120,38 @@ If anything goes wrong it stops and tells you exactly what to do. **Running
 
 ## Getting the key
 
-1. In Chrome, go to **console.anthropic.com** and sign up.
-2. Add a little credit — **$5 is plenty to start**.
-3. Go to **API keys** → **Create key**, and copy it.
-4. Paste it when `./setup.sh` asks. (Pasting into the Terminal shows nothing —
-   that's normal, it's hidden on purpose. Just press Enter.)
+Two options. **You only need one.**
 
-Expect a few dollars a month for normal use. The console at
-**console.anthropic.com** shows exactly what you've spent, and you can cap it
-there so it can never surprise you.
+### Free — Google Gemini (no card, no payment)
+
+1. In Chrome, go to **aistudio.google.com**
+2. Sign in with the Google account already on your Chromebook
+3. Click **Get API key** → **Create API key**
+4. Copy it. It starts with `AIza`
+
+That's it. No card, no trial clock, no parental permission needed. There's a
+daily limit on how much you can use, which for one person talking to Jarvis is
+generous.
+
+### Paid — Anthropic Claude (needs a card, and a grown-up's yes)
+
+1. **console.anthropic.com** → sign up
+2. **Billing** → add **$5** of credit
+3. **API keys** → **Create key**. It starts with `sk-`
+
+Better answers than the free one, and about a dollar a month in practice. But
+it needs a card attached, so that's a conversation to have with your parents
+rather than a thing to work around.
+
+### Either way
+
+```
+jarvis key
+```
+
+Paste whichever key you have. **He works out which is which himself** and
+checks it actually works before saving it. Pasting into the Terminal shows
+nothing on screen — that's on purpose. Just paste and press Enter.
 
 ---
 

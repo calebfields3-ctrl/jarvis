@@ -285,15 +285,32 @@ def build_mind(
     jarvis: Any = None,
     on_text: Callable[[str], None] | None = None,
     **kwargs,
-) -> AgentBrain | None:
-    """An ``AgentBrain`` if one can be built, otherwise None.
+):
+    """Whichever mind the available keys allow, or None.
 
-    Returns None rather than raising because every caller's answer to "no API
-    key" is the same -- fall back to the router -- and a missing key is an
-    ordinary state, not an error.
+    Claude first when its key is present -- it is the better one, and someone
+    who has paid for it should get it. Gemini otherwise, because its free
+    tier means "no money" does not have to mean "no mind". Returns None
+    rather than raising: every caller's answer to having neither is the same,
+    fall back to the router, and that is an ordinary state rather than an
+    error.
     """
-    try:
-        return AgentBrain(toolbox, jarvis=jarvis, on_text=on_text, **kwargs)
-    except NoMindAvailable as exc:
-        log.info("running without the API mind: %s", exc)
-        return None
+    if api_key_available():
+        try:
+            return AgentBrain(toolbox, jarvis=jarvis, on_text=on_text, **kwargs)
+        except NoMindAvailable as exc:
+            log.info("Claude unavailable: %s", exc)
+
+    from jarvis.agent.gemini import GeminiBrain
+    from jarvis.agent.gemini import api_key_available as gemini_key
+
+    if gemini_key():
+        try:
+            # `effort` and `web_tools` are Claude's; Gemini has neither.
+            usable = {k: v for k, v in kwargs.items() if k in {"model", "api_key"}}
+            return GeminiBrain(toolbox, jarvis=jarvis, on_text=on_text, **usable)
+        except NoMindAvailable as exc:
+            log.info("Gemini unavailable: %s", exc)
+
+    log.info("no API key for either provider -- falling back to the router")
+    return None
