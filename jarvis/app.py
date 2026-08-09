@@ -35,6 +35,14 @@ log = logging.getLogger(__name__)
 # read what he said and ask a follow-up without saying his name again.
 IDLE_DISMISS_SECONDS = 45.0
 
+# How long he waits for you to start talking after the wake word, and then
+# between one answer and your next sentence. The follow-up window is longer:
+# by then you have heard an answer and may be thinking about it, and being cut
+# off mid-thought is the thing that makes an assistant feel like a vending
+# machine.
+FIRST_LISTEN_SECONDS = 12.0
+FOLLOW_UP_SECONDS = 25.0
+
 DISMISSALS = {
     "goodbye", "bye", "that's all", "thats all", "thanks", "thank you",
     "nothing", "never mind", "nevermind", "dismissed", "sleep", "go away",
@@ -108,6 +116,8 @@ class JarvisApp:
         self.daemon: WakeDaemon | None = None
         self.voice = None
         self._notes: list[str] = []
+        # Said once, not on every unanswered question.
+        self._explained_no_mind = False
 
     # ------------------------------------------------------------ assembly
     @property
@@ -206,13 +216,31 @@ class JarvisApp:
         if self.jarvis.first_time_today():
             self._speak(self.jarvis.summoned())
 
-        heard = self.voice.listen(timeout=12.0) if self.voice else None
-        if not heard:
-            self._idle()
-            return
-        if self.hud is not None:
-            self.hud.say(heard, who="caleb")
-        self._handle(heard)
+        # The conversation stays open. Having to say his name before every
+        # sentence is not a conversation, it is a series of commands -- so
+        # after he answers he keeps listening, and only drops back to waiting
+        # for the wake word once you have stopped talking to him.
+        timeout = FIRST_LISTEN_SECONDS
+        while True:
+            if self.hud is not None:
+                self.hud.set_mode(Mode.LISTENING)
+                self.hud.status("listening")
+
+            heard = self.voice.listen(timeout=timeout) if self.voice else None
+            if not heard:
+                break
+            if self.hud is not None:
+                self.hud.say(heard, who="caleb")
+
+            if heard.strip().lower() in DISMISSALS:
+                self._speak(self.jarvis.voice.dismissed())
+                self._idle(delay=0.0)
+                return
+
+            self._handle(heard, then_idle=False)
+            timeout = FOLLOW_UP_SECONDS
+
+        self._idle()
 
     def _speak(self, text: str) -> None:
         """Put a line in front of Caleb, in whatever channels exist.
@@ -231,8 +259,13 @@ class JarvisApp:
             except Exception:
                 log.debug("speaking failed", exc_info=True)
 
-    def _handle(self, text: str) -> None:
-        """One exchange, from whichever direction it arrived."""
+    def _handle(self, text: str, *, then_idle: bool = True) -> None:
+        """One exchange, from whichever direction it arrived.
+
+        ``then_idle`` is False when this is one turn inside an open
+        conversation -- the caller keeps listening, so starting a dismissal
+        timer here would race the next question.
+        """
         self._cancel_dismissal()
 
         if text.strip().lower() in DISMISSALS:
@@ -253,7 +286,8 @@ class JarvisApp:
             self.hud.set_mode(Mode.SPEAKING)
             self.hud.status("speaking")
         self._speak(answer)
-        self._idle()
+        if then_idle:
+            self._idle()
 
     # ----------------------------------------------------------- dismissal
     def _idle(self, delay: float | None = None) -> None:
@@ -288,7 +322,42 @@ class JarvisApp:
         if self.mind is not None:
             reply = self.mind.say(text)
             return reply.text or "..."
-        return self.jarvis.ask(text)
+
+        answer = self.jarvis.ask(text)
+
+        # The router only knows finance. When it shrugs, the useful thing to
+        # say is *why* -- otherwise "ask me about your portfolio" looks like
+        # his opinion of the question rather than a missing API key, and you
+        # rephrase forever trying to find the words he wants.
+        if not self._explained_no_mind and self._is_a_shrug(answer):
+            self._explained_no_mind = True
+            return (
+                f"{answer}\n\n"
+                "That's the limit of what I can do without a mind, sir. Right now "
+                "I'm matching your words against a list of things I know, which is "
+                "why anything outside markets gets that answer. Set an Anthropic "
+                "API key and I can answer properly -- run `jarvis doctor` and it "
+                "will tell you exactly what to do."
+            )
+        return answer
+
+    def _is_a_shrug(self, answer: str) -> bool:
+        """Did the router fail to find anything, rather than answer?
+
+        Compared against the persona's own strings rather than guessed at by
+        keyword, so changing the wording cannot silently break this.
+        """
+        voice = self.jarvis.voice
+        for method in ("unknown_topic", "too_vague"):
+            builder = getattr(voice, method, None)
+            if builder is None:
+                continue
+            try:
+                if answer.strip() == builder().strip():
+                    return True
+            except Exception:
+                continue
+        return False
 
     def _show_tool_call(self, call) -> None:
         """Show what he's touching, as he touches it.

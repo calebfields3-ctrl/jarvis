@@ -648,3 +648,204 @@ def test_the_screen_still_gets_everything(app, capsys):
 
     assert "jarvis deposit 10000" in capsys.readouterr().out
     assert "deposit 10000" not in app.voice.spoken[0]
+
+
+# ------------------------------------------------- the conversation stays open
+
+
+def test_he_keeps_listening_after_answering(app):
+    """Saying his name before every sentence is commands, not conversation."""
+    app.hud = FakeHUD()
+    app.voice = FakeVoice("what's my portfolio", "and NVDA?", "what about AAPL")
+    app._woken()
+
+    assert app._jarvis.asked == ["what's my portfolio", "and NVDA?", "what about AAPL"]
+
+
+def test_silence_ends_the_conversation(app):
+    app.hud = FakeHUD()
+    app.voice = FakeVoice("one question")
+    app._woken()
+
+    assert app._jarvis.asked == ["one question"]
+    assert app.voice.heard == []
+
+
+def test_the_follow_up_window_is_longer_than_the_first(app):
+    """After an answer you may be thinking; being cut off feels like a machine."""
+    from jarvis.app import FIRST_LISTEN_SECONDS, FOLLOW_UP_SECONDS
+
+    assert FOLLOW_UP_SECONDS > FIRST_LISTEN_SECONDS
+
+    waits = []
+
+    class TimedVoice(FakeVoice):
+        def listen(self, timeout=None):
+            waits.append(timeout)
+            return super().listen(timeout)
+
+    app.hud = FakeHUD()
+    app.voice = TimedVoice("first", "second")
+    app._woken()
+
+    assert waits[0] == FIRST_LISTEN_SECONDS
+    assert waits[1] == FOLLOW_UP_SECONDS
+
+
+def test_goodbye_ends_the_conversation_mid_flow(app):
+    app.hud = FakeHUD()
+    app.voice = FakeVoice("what's my portfolio", "goodbye", "this is never heard")
+    app._woken()
+
+    assert app._jarvis.asked == ["what's my portfolio"]
+    assert "dismiss" in app.hud.actions
+
+
+def test_no_dismissal_timer_races_the_next_question(app):
+    """A timer started mid-conversation could hide the window while he talks."""
+    app.hud = FakeHUD()
+    app.voice = FakeVoice("one", "two")
+    app._handle("one", then_idle=False)
+
+    assert getattr(app, "_dismiss_timer", None) is None
+
+
+def test_each_turn_in_the_conversation_is_answered(app):
+    app.hud = FakeHUD()
+    app.voice = FakeVoice("a", "b")
+    app._woken()
+
+    spoken = " ".join(app.voice.spoken)
+    assert "answer to a" in spoken and "answer to b" in spoken
+
+
+# ---------------------------------------------- saying why he cannot answer
+
+
+class ShruggingJarvis(FakeJarvis):
+    """A router that has nothing for the question, like the real one."""
+
+    SHRUG = "I've nothing reliable on that, sir."
+
+    def __init__(self):
+        super().__init__()
+        self.voice = type(
+            "V", (FakeVoicePersona,),
+            {"unknown_topic": lambda self: ShruggingJarvis.SHRUG,
+             "too_vague": lambda self: "Be more specific."},
+        )()
+
+    def ask(self, text):
+        self.asked.append(text)
+        return self.SHRUG
+
+
+def test_a_shrug_explains_the_missing_key_rather_than_just_shrugging(app):
+    """Otherwise it reads as his opinion of the question, not a missing key."""
+    app._jarvis = ShruggingJarvis()
+    app.mind = None
+
+    answer = app._answer("what's the capital of France")
+    assert "API key" in answer
+    assert "jarvis doctor" in answer
+
+
+def test_the_explanation_is_given_once_not_every_time(app):
+    app._jarvis = ShruggingJarvis()
+    app.mind = None
+
+    first = app._answer("something")
+    second = app._answer("something else")
+    assert "API key" in first
+    assert "API key" not in second
+
+
+def test_a_real_answer_is_never_padded_with_the_explanation(app):
+    app.mind = None
+    answer = app._answer("how's my portfolio")
+    assert "API key" not in answer
+
+
+def test_with_a_mind_the_router_is_not_used_at_all(app):
+    class FakeMind:
+        def say(self, text):
+            return types.SimpleNamespace(text="a real answer about anything")
+
+    import types
+
+    app.mind = FakeMind()
+    assert app._answer("what's the capital of France") == "a real answer about anything"
+    assert app._jarvis.asked == []
+
+
+# ------------------------------------------------------------- the doctor
+
+
+def test_the_doctor_never_crashes_on_a_broken_check(monkeypatch):
+    """A diagnostic that dies has told you nothing."""
+    from jarvis import doctor
+
+    def explode():
+        raise RuntimeError("the check itself is broken")
+
+    monkeypatch.setattr(doctor, "CHECKS", (("exploding", explode),))
+    checks = doctor.run_all()
+    assert checks[0].status == doctor.FAIL
+    assert "broken" in checks[0].detail
+
+
+def test_every_failure_names_a_fix(monkeypatch):
+    """"microphone: no" is not a diagnosis."""
+    from jarvis import doctor
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    for check in doctor.run_all(skip_network=True):
+        if check.status in (doctor.FAIL, doctor.WARN):
+            assert check.fix, f"{check.name} failed without saying what to do"
+
+
+def test_a_missing_key_is_a_failure_not_a_warning(monkeypatch):
+    """It is the whole difference between answering anything and only finance."""
+    from jarvis import doctor
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    check = doctor.check_mind()
+    assert check.status == doctor.FAIL
+    assert "finance" in check.detail
+
+
+def test_a_key_of_the_wrong_shape_is_caught_before_the_network(monkeypatch):
+    from jarvis import doctor
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-real-key")
+    assert doctor.check_mind().status == doctor.FAIL
+
+
+def test_the_key_is_never_printed_in_full(monkeypatch):
+    """The report gets pasted into chat windows."""
+    from jarvis import doctor
+
+    secret = "sk-ant-abcdefghijklmnopqrstuvwxyz0123456789"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
+    assert secret not in doctor.check_mind().detail
+
+
+def test_the_report_lists_fixes_for_what_failed(monkeypatch):
+    from jarvis import doctor
+
+    checks = [
+        doctor.Check("python", doctor.OK, "3.12"),
+        doctor.Check("his mind", doctor.FAIL, "not set", "run ./setup.sh"),
+        doctor.Check("his voice", doctor.WARN, "robotic", "jarvis voice --install"),
+    ]
+    text = doctor.report(checks)
+    assert "run ./setup.sh" in text
+    assert "jarvis voice --install" in text
+    assert "FAIL" in text
+
+
+def test_an_all_clear_says_what_to_do_next():
+    from jarvis import doctor
+
+    text = doctor.report([doctor.Check("python", doctor.OK, "3.12")])
+    assert "hey Jarvis" in text

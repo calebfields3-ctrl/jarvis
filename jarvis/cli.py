@@ -208,6 +208,15 @@ def cmd_voice(args, jarvis: Jarvis) -> int:
     return 0
 
 
+def cmd_doctor(args, jarvis: Jarvis) -> int:
+    """Check everything and say what's broken, in words with fixes attached."""
+    from jarvis.doctor import FAIL, report, run_all
+
+    checks = run_all(skip_network=args.offline)
+    print(report(checks))
+    return 1 if any(c.status == FAIL for c in checks) else 0
+
+
 def cmd_wake(args, jarvis: Jarvis) -> int:
     print(jarvis.wake())
     jarvis.sleep()
@@ -439,6 +448,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     voice.add_argument("--test", action="store_true", help="say something out loud")
     voice.set_defaults(func=cmd_voice)
+
+    sub.add_parser(
+        "doctor", help="check everything and say what's broken"
+    ).set_defaults(func=cmd_doctor)
 
     sub.add_parser("wake", help="print the greeting once").set_defaults(func=cmd_wake)
 
