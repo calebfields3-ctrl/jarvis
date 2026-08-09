@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# Start Jarvis. Works from a fresh terminal with nothing set up.
+#
+#   ./run           talk to him
+#   ./run key       set the API key that makes him smart
+#   ./run doctor    check what's working
+#
+# Why this exists: `jarvis` is installed onto the PATH by setup.sh, which
+# only takes effect in a *new* terminal, and silently does nothing if the
+# shell profile did not take. That produces "command not found" on a machine
+# where everything is actually installed correctly -- the single most common
+# and least informative way this has failed.
+#
+# This script depends on none of that. It is in the folder you already cloned,
+# and it calls the virtual environment's Python by its full path, so there is
+# nothing to activate, source, or reopen.
+
+set -u
+cd "$(dirname "$0")" || exit 1
+
+if [ ! -x .venv/bin/python ]; then
+    printf "\n  Jarvis is not installed yet. Run this first:\n\n    ./setup.sh\n\n" >&2
+    exit 1
+fi
+
+# `exec` so Ctrl-C reaches Jarvis rather than this wrapper.
+exec .venv/bin/python -m jarvis.cli "$@"

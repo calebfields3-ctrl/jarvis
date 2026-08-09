@@ -849,3 +849,32 @@ def test_an_all_clear_says_what_to_do_next():
 
     text = doctor.report([doctor.Check("python", doctor.OK, "3.12")])
     assert "hey Jarvis" in text
+
+
+# ------------------------------------------------------- the ./run launcher
+
+
+def test_the_run_script_exists_and_is_executable():
+    """`jarvis` needs a new terminal and a working PATH. This needs neither."""
+    import os
+    from pathlib import Path
+
+    run = Path(__file__).resolve().parent.parent / "run"
+    assert run.exists(), "the ./run launcher is missing"
+    assert os.access(run, os.X_OK), "./run is not executable, so it cannot be run"
+
+
+def test_the_run_script_uses_the_venv_python_by_full_path():
+    """Anything relying on PATH or activation is what keeps failing."""
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parent.parent / "run").read_text()
+    assert ".venv/bin/python" in text
+    assert "source" not in text, "activation is exactly what it must not need"
+
+
+def test_the_run_script_says_what_to_do_when_nothing_is_installed():
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parent.parent / "run").read_text()
+    assert "./setup.sh" in text

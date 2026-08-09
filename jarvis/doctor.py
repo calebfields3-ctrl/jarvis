@@ -60,7 +60,7 @@ def check_mind() -> Check:
         return Check(
             "his mind (API key)", FAIL,
             "not set -- he can only answer finance questions from his built-in list",
-            "jarvis key      (takes a free Google key or a paid Anthropic one)",
+            "cd ~/jarvis && ./run key      (free Google key, or a paid Anthropic one)",
         )
     if not key.startswith("sk-"):
         return Check(
@@ -85,7 +85,7 @@ def check_gemini_reaches_google() -> Check:
 
     key = (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or "").strip()
     if not key:
-        return Check("can he think", FAIL, "no Gemini key set", "jarvis key")
+        return Check("can he think", FAIL, "no Gemini key set", "cd ~/jarvis && ./run key")
 
     from jarvis.agent.gemini import API_ROOT
 
@@ -257,8 +257,9 @@ def check_command() -> Check:
     where = shutil.which("jarvis")
     if where is None:
         return Check(
-            "the 'jarvis' command", WARN, "not on your PATH in this shell",
-            "cd ~/jarvis && ./setup.sh",
+            "the 'jarvis' command", WARN,
+            "not on this shell's PATH -- use ./run instead, it always works",
+            "cd ~/jarvis && ./run",
         )
     return Check("the 'jarvis' command", OK, where)
 
@@ -305,9 +306,9 @@ def report(checks: list[Check]) -> str:
         for check in degraded:
             lines.append(f"    {check.fix}")
     if not broken and not degraded:
-        lines += ["", "  Everything is working. Run 'jarvis' and say \"hey Jarvis\".", ""]
+        lines += ["", "  Everything is working. Run ./run and say \"hey Jarvis\".", ""]
     elif not broken:
-        lines += ["", "  Nothing is broken -- he'll run. Run 'jarvis' and say \"hey Jarvis\".", ""]
+        lines += ["", "  Nothing is broken -- he'll run. Run ./run and say \"hey Jarvis\".", ""]
     else:
         lines.append("")
     return "\n".join(lines)
