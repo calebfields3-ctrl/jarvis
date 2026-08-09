@@ -540,3 +540,16 @@ def test_the_web_tools_can_be_left_off(engine):
     AgentBrain(ToolBox(engine), client=client, web_tools=False).say("hello")
 
     assert not any(isinstance(t, dict) for t in client.calls[0]["tools"])
+
+
+def test_the_prompt_asks_for_conversation_not_memos():
+    """He talks in long sentences and wants the same back."""
+    prompt = build_system_prompt()
+    assert "conversation with him" in prompt
+    assert "Length follows the question" in prompt
+
+
+def test_the_prompt_does_not_still_demand_brevity():
+    """An instruction to be short would quietly override the one above it."""
+    prompt = build_system_prompt()
+    assert "Three sentences beats ten" not in prompt
