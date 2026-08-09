@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J.A.R.V.I.S.</title>
+<style>
+/* One file, no CDN, no build step. Jarvis has to install on a machine where
+   pip sometimes cannot reach the network; a face that needs a download is
+   not a face you can rely on. */
+:root {
+  --bg: #05070c;
+  --panel: rgba(18, 26, 38, 0.62);
+  --edge: rgba(94, 234, 255, 0.14);
+  --cyan: #4fe3ff;
+  --cyan-dim: rgba(79, 227, 255, 0.5);
+  --pale: #dff6ff;
+  --muted: #7f95a8;
+  --amber: #ffb347;
+  --red: #ff6b6b;
+  --green: #57e6a5;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--pale);
+  font: 15px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Two soft pools of light rather than a flat black rectangle. Depth is
+     most of what separates "modern" from "a terminal with colours". */
+  background-image:
+    radial-gradient(1100px 620px at 50% -12%, rgba(37, 99, 135, 0.30), transparent 62%),
+    radial-gradient(760px 520px at 88% 108%, rgba(24, 61, 92, 0.34), transparent 60%);
+}
+
+/* ------------------------------------------------------------- the reactor */
+#stage {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 26px 20px 12px;
+}
+
+#reactor { width: 190px; height: 190px; display: block; }
+
+/* Each ring turns at its own rate and direction. Four circles rotating
+   together read as one solid disc; this reads as machinery. */
+.ring { transform-origin: 100px 100px; fill: none; stroke-linecap: round; }
+.r0 { animation: spin 14s linear infinite; }
+.r1 { animation: spin 9s linear infinite reverse; }
+.r2 { animation: spin 22s linear infinite; }
+.r3 { animation: spin 6s linear infinite reverse; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#core { transform-origin: 100px 100px; animation: breathe 3.6s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { opacity: .78; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.07); }
+}
+
+/* Listening: brighter and faster, so "is it hearing me" needs no words. */
+body[data-mode="listening"] .r0 { animation-duration: 3s; }
+body[data-mode="listening"] .r1 { animation-duration: 2.2s; }
+body[data-mode="listening"] .r3 { animation-duration: 1.6s; }
+body[data-mode="listening"] #core { animation-duration: 1.1s; }
+body[data-mode="thinking"] .r1 { animation-duration: 4s; }
+body[data-mode="speaking"] #core { animation-duration: .85s; }
+
+/* The one state that needs Caleb is the one thing that is not cyan. */
+body[data-mode="asking"] { --cyan: var(--amber); --cyan-dim: rgba(255, 179, 71, .55); }
+
+#title {
+  margin-top: 12px;
+  font-size: 12px;
+  letter-spacing: .62em;
+  text-indent: .62em;
+  color: var(--cyan-dim);
+  font-weight: 600;
+}
+
+#status {
+  margin-top: 5px;
+  font-size: 11.5px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  min-height: 18px;
+}
+#status::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--cyan);
+  vertical-align: middle;
+  box-shadow: 0 0 10px var(--cyan);
+  animation: blink 2.4s ease-in-out infinite;
+}
+@keyframes blink { 50% { opacity: .25; } }
+
+/* ---------------------------------------------------------- the transcript */
+#log {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 8px 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(79, 227, 255, .22) transparent;
+}
+#log::-webkit-scrollbar { width: 8px; }
+#log::-webkit-scrollbar-thumb {
+  background: rgba(79, 227, 255, .22); border-radius: 4px;
+}
+
+.msg {
+  max-width: min(780px, 92%);
+  padding: 11px 16px;
+  border-radius: 16px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  animation: rise .22s ease-out;
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(7px); } }
+
+.jarvis {
+  align-self: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-left: 2px solid var(--cyan);
+}
+.caleb {
+  align-self: flex-end;
+  background: rgba(79, 227, 255, .10);
+  border: 1px solid rgba(79, 227, 255, .22);
+  color: #fff;
+}
+.note {
+  align-self: center;
+  background: rgba(255, 179, 71, .09);
+  border: 1px solid rgba(255, 179, 71, .26);
+  color: #ffd9a3;
+  font-size: 13.5px;
+}
+/* Tool calls are a running log, not conversation -- monospace, small, quiet,
+   but always visible. It is the only live view of a thing holding a shell. */
+.tool {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 1px 6px;
+  font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  backdrop-filter: none;
+}
+.tool::before { content: "› "; color: var(--cyan-dim); }
+.tool.bad { color: var(--red); }
+.tool.bad::before { content: "× "; color: var(--red); }
+
+/* ------------------------------------------------------------- the composer */
+#composer {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 10px;
+  padding: 14px 22px 22px;
+  border-top: 1px solid rgba(79, 227, 255, .08);
+}
+#input {
+  flex: 1;
+  background: rgba(12, 20, 30, .8);
+  border: 1px solid var(--edge);
+  border-radius: 13px;
+  padding: 13px 17px;
+  color: var(--pale);
+  font: inherit;
+  outline: none;
+  transition: border-color .18s, box-shadow .18s;
+}
+#input::placeholder { color: #56697a; }
+#input:focus {
+  border-color: rgba(79, 227, 255, .45);
+  box-shadow: 0 0 0 3px rgba(79, 227, 255, .09);
+}
+#send {
+  background: rgba(79, 227, 255, .13);
+  border: 1px solid rgba(79, 227, 255, .3);
+  border-radius: 13px;
+  color: var(--cyan);
+  padding: 0 22px;
+  font: 600 14px/1 inherit;
+  cursor: pointer;
+  transition: background .18s;
+}
+#send:hover { background: rgba(79, 227, 255, .22); }
+
+/* -------------------------------------------------------------- approval */
+#veil {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 6, 11, .74);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 10;
+}
+#veil.on { display: flex; }
+#ask {
+  max-width: 520px;
+  width: 100%;
+  background: rgba(20, 28, 40, .97);
+  border: 1px solid rgba(255, 179, 71, .34);
+  border-radius: 20px;
+  padding: 26px 28px;
+  animation: rise .2s ease-out;
+}
+#ask h2 {
+  font-size: 12px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin-bottom: 14px;
+}
+#ask-action {
+  font: 13.5px/1.55 ui-monospace, Menlo, monospace;
+  background: rgba(0, 0, 0, .34);
+  border-radius: 11px;
+  padding: 12px 14px;
+  word-break: break-all;
+  margin-bottom: 12px;
+}
+#ask-reason { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+.row { display: flex; gap: 10px; justify-content: flex-end; }
+.btn {
+  border-radius: 11px;
+  padding: 11px 22px;
+  font: 600 14px/1 inherit;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.no  { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.15); color: var(--pale); }
+.yes { background: rgba(255, 179, 71, .17); border-color: rgba(255, 179, 71, .45); color: #ffcf8a; }
+.no:hover  { background: rgba(255,255,255,.11); }
+.yes:hover { background: rgba(255, 179, 71, .27); }
+
+#offline {
+  display: none;
+  text-align: center;
+  padding: 9px;
+  background: rgba(255, 107, 107, .13);
+  color: #ffb0b0;
+  font-size: 13px;
+}
+#offline.on { display: block; }
+
+@media (max-width: 560px) {
+  #reactor { width: 140px; height: 140px; }
+  #stage { padding-top: 16px; }
+  .msg { max-width: 96%; }
+}
+</style>
+</head>
+<body data-mode="idle">
+
+<div id="offline">Jarvis has stopped. Close this tab, or start him again in the Terminal.</div>
+
+<div id="stage">
+  <svg id="reactor" viewBox="0 0 200 200" aria-hidden="true">
+    <defs>
+      <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="4.5" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <radialGradient id="hot">
+        <stop offset="0%"   stop-color="#ffffff"/>
+        <stop offset="42%"  stop-color="var(--cyan)"/>
+        <stop offset="100%" stop-color="rgba(79,227,255,0)"/>
+      </radialGradient>
+    </defs>
+    <g filter="url(#glow)">
+      <!-- Gaps in each ring: the eye needs an edge to track the rotation. -->
+      <circle class="ring r0" cx="100" cy="100" r="82" stroke="var(--cyan)"
+              stroke-opacity=".55" stroke-width="1.6" stroke-dasharray="150 66"/>
+      <circle class="ring r1" cx="100" cy="100" r="66" stroke="var(--cyan)"
+              stroke-opacity=".75" stroke-width="2.4" stroke-dasharray="96 118"/>
+      <circle class="ring r2" cx="100" cy="100" r="50" stroke="var(--cyan)"
+              stroke-opacity=".45" stroke-width="1.2" stroke-dasharray="26 18"/>
+      <circle class="ring r3" cx="100" cy="100" r="34" stroke="var(--cyan)"
+              stroke-opacity=".9" stroke-width="2.8" stroke-dasharray="58 42"/>
+      <circle id="core" cx="100" cy="100" r="21" fill="url(#hot)"/>
+    </g>
+  </svg>
+  <div id="title">J A R V I S</div>
+  <div id="status">standing by</div>
+</div>
+
+<div id="log"></div>
+
+<form id="composer" autocomplete="off">
+  <input id="input" placeholder="Say something, or just talk to him out loud…" autofocus>
+  <button id="send" type="submit">Send</button>
+</form>
+
+<div id="veil">
+  <div id="ask" role="dialog" aria-modal="true">
+    <h2>Jarvis needs your say-so</h2>
+    <div id="ask-action"></div>
+    <div id="ask-reason"></div>
+    <div class="row">
+      <button class="btn no"  id="deny">No</button>
+      <button class="btn yes" id="allow">Allow</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const log = document.getElementById('log');
+const input = document.getElementById('input');
+const veil = document.getElementById('veil');
+
+let seen = -1;        // last rendered version
+let pendingId = null;
+let misses = 0;
+
+function draw(state) {
+  document.body.dataset.mode = state.mode || 'idle';
+  document.getElementById('status').textContent = state.status || '';
+  document.title = state.mode === 'listening' ? '● listening — J.A.R.V.I.S.'
+                                              : 'J.A.R.V.I.S.';
+
+  // Re-rendering the whole log is fine at this size and avoids a class of
+  // bug where the incremental path and the state drift apart.
+  const stuck = log.scrollHeight - log.scrollTop - log.clientHeight < 90;
+  log.innerHTML = '';
+  for (const line of state.lines) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + (line.who === 'tool'
+      ? 'tool' + (line.ok ? '' : ' bad')
+      : line.who);
+    el.textContent = line.text;
+    log.appendChild(el);
+  }
+  if (stuck) log.scrollTop = log.scrollHeight;
+
+  if (state.pending) {
+    pendingId = state.pending.id;
+    document.getElementById('ask-action').textContent = state.pending.action;
+    document.getElementById('ask-reason').textContent = state.pending.reason;
+    veil.classList.add('on');
+  } else {
+    pendingId = null;
+    veil.classList.remove('on');
+  }
+}
+
+async function poll() {
+  try {
+    const res = await fetch('/api/state');
+    const state = await res.json();
+    misses = 0;
+    document.getElementById('offline').classList.remove('on');
+    if (state.version !== seen) { seen = state.version; draw(state); }
+  } catch (err) {
+    // A couple of missed polls is a slow turn, not a dead server. Only say
+    // he has stopped once it is actually true.
+    if (++misses > 6) document.getElementById('offline').classList.add('on');
+  }
+}
+setInterval(poll, 400);
+poll();
+
+document.getElementById('composer').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  await fetch('/api/say', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text}),
+  });
+  poll();
+});
+
+async function answer(approved) {
+  if (!pendingId) return;
+  await fetch('/api/approve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: pendingId, approved}),
+  });
+  veil.classList.remove('on');
+  poll();
+}
+document.getElementById('allow').addEventListener('click', () => answer(true));
+document.getElementById('deny').addEventListener('click', () => answer(false));
+// Escape denies. The safe answer should be the easy one.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && pendingId) answer(false);
+});
+</script>
+</body>
+</html>

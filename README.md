@@ -11,10 +11,10 @@ himself against what the market actually did.
 $ jarvis
 ```
 
-He starts up listening, with nothing on screen.
+A browser tab opens with him in it — dark, a glowing arc reactor, live
+transcript, and every tool call as it happens.
 
-Say **"hey Jarvis"** and a window comes up in front of whatever you're doing,
-and he answers out loud. The first summons of each day also
+Say **"hey Jarvis"** and he answers out loud. The first summons of each day also
 brings the morning rundown unasked — portfolio, overnight news, standing
 watches, whether you're clear to day trade. Every summons after that is one
 line, because a briefing you hear twenty times a day stops being a briefing.
@@ -24,10 +24,14 @@ open.
 Every tool call prints as it happens, so you can watch a thing with a shell do
 its work rather than reading about it afterwards in the log.
 
-The window is the arc-reactor HUD: it brightens when he's listening, ticks over
-while he works, pulses when he speaks, and turns amber when he needs your
-say-so. `jarvis start --no-window` keeps him in the terminal instead, where
-everything works the same.
+The reactor is the interface: it brightens and spins up when he's listening,
+ticks over while he works, pulses when he speaks, and turns amber when he needs
+your say-so — at which point an approval appears with the exact command on it.
+
+The page is served from localhost by Python's standard library. No framework,
+no build step, no CDN — which matters because a face that needs a download is
+a face that breaks on a bad connection. `jarvis start --no-window` keeps him in
+the terminal; `--window` uses the old tkinter HUD.
 
 He calls you "sir" rather than by name — text-to-speech mispronounces plenty of
 real names, and hearing yours said wrong every time is worse than not being
@@ -456,6 +460,8 @@ they just type.
 |---|---|
 | `jarvis` | **The whole thing** — wake word and the full agent, in your terminal |
 | `jarvis start --no-window` | Same, but stays in this terminal |
+| `jarvis key` | Set the API key that makes him smart, and verify it |
+| `jarvis doctor` | Check everything and print what's broken |
 | `jarvis start --no-voice` | Same, typing only |
 | `jarvis voice` | What he speaks with, and what's missing |
 | `jarvis voice --install` | Download the neural voice (60 MB, once) |

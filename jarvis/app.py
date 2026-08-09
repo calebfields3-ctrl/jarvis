@@ -26,6 +26,7 @@ from jarvis.agent.brain import build_mind
 from jarvis.agent.tools import ToolBox
 from jarvis.config import Config, get_config
 from jarvis.gui.hud import HUD, Mode, hud_problem
+from jarvis.web import WebFace
 from jarvis.safety.permissions import PermissionEngine, PermissionPolicy
 from jarvis.voice.daemon import WakeDaemon
 
@@ -101,11 +102,14 @@ class JarvisApp:
         jarvis: Any = None,
         use_hud: bool = True,
         use_voice: bool = True,
+        face: str = "web",
     ) -> None:
         self.config = config or get_config()
         self._jarvis = jarvis
         self.use_hud = use_hud
         self.use_voice = use_voice
+        # 'web' | 'window' | 'terminal'
+        self.face = face if use_hud else "terminal"
 
         self.engine = PermissionEngine(
             PermissionPolicy.default(),
@@ -129,6 +133,18 @@ class JarvisApp:
         return self._jarvis
 
     def _build(self) -> None:
+        if self.face == "web":
+            # The browser is the default face: it looks like software from
+            # this decade, and unlike tkinter it needs nothing installed.
+            self.hud = WebFace(
+                on_submit=self._handle,
+                on_close=self._shutdown,
+                start_hidden=False,
+            )
+            self._note(f"Open {self.hud.url} if a tab didn't appear.")
+            self._build_mind()
+            return
+
         problem = hud_problem() if self.use_hud else "not asked for"
         if problem is None:
             self.hud = HUD(
@@ -144,6 +160,9 @@ class JarvisApp:
         elif self.use_hud:
             self._note(f"Running in the terminal -- no window available.\n{problem}")
 
+        self._build_mind()
+
+    def _build_mind(self) -> None:
         toolbox = ToolBox(
             self.engine,
             jarvis=self.jarvis,
@@ -299,7 +318,9 @@ class JarvisApp:
         if self.hud is not None:
             self.hud.set_mode(Mode.IDLE)
             self.hud.status("standing by")
-        if self.hud is None or self.voice is None:
+        # A browser tab is not dismissed -- closing it would be closing
+        # something Caleb opened, and he can simply switch away from it.
+        if self.hud is None or self.voice is None or self.face == "web":
             return
 
         wait = IDLE_DISMISS_SECONDS if delay is None else delay
@@ -402,7 +423,14 @@ class JarvisApp:
         for note in self._notes:
             self.hud.say(note)
 
-        if self.voice is not None:
+        if self.face == "web":
+            # The tab is already open and looking at him, so he greets it.
+            print(f"\n  Jarvis is at {self.hud.url}")
+            print("  Ctrl-C here to stop him.\n")
+            self.hud.say(self.jarvis.wake(channel="text"))
+            if self.voice is not None:
+                self.hud.status(f"say '{self.config.wake_phrase}'")
+        elif self.voice is not None:
             # Hidden and waiting. The greeting belongs to the first summon,
             # not to startup -- nobody is looking at the screen yet, and
             # saying it now means he says it twice.

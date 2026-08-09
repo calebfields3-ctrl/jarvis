@@ -200,6 +200,12 @@ class HUD:
     HEIGHT = 620
     FRAME_MS = 33  # ~30fps; enough for this, cheap on a Chromebook
 
+    # Declared on the class, not only assigned in __init__, so this face and
+    # the browser one present the same surface -- `jarvis.app` drives either
+    # without knowing which it holds, and a difference here shows up as an
+    # AttributeError at runtime rather than as a failing test.
+    visible = True
+
     def __init__(
         self,
         *,

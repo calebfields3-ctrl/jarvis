@@ -36,6 +36,9 @@ all = [
 [project.scripts]
 jarvis = "jarvis.cli:main"
 
+[tool.setuptools.package-data]
+"jarvis.web" = ["ui.html"]
+
 [tool.setuptools]
 packages = [
     "jarvis",
@@ -47,6 +50,7 @@ packages = [
     "jarvis.voice",
     "jarvis.agent",
     "jarvis.gui",
+    "jarvis.web",
 ]
 
 # The editable data files (watchlist, curated sources, news feeds) live in

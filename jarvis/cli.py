@@ -107,17 +107,18 @@ def cmd_start(args, jarvis: Jarvis) -> int:
     """The whole thing: window, wake word, and a real mind behind it."""
     from jarvis.app import JarvisApp
 
-    use_hud = jarvis.config.window
+    face = "web"
     if getattr(args, "window", False):
-        use_hud = True
-    if getattr(args, "no_window", False):
-        use_hud = False
+        face = "window"
+    if getattr(args, "no_window", False) or not jarvis.config.window:
+        face = "terminal"
 
     JarvisApp(
         jarvis.config,
         jarvis=jarvis,
-        use_hud=use_hud,
+        use_hud=face != "terminal",
         use_voice=not getattr(args, "no_voice", False),
+        face=face,
     ).run()
     return 0
 
@@ -205,6 +206,55 @@ def cmd_voice(args, jarvis: Jarvis) -> int:
 
     if args.test:
         speaker.say(jarvis.voice.summoned(jarvis.spoken_name))
+    return 0
+
+
+def cmd_key(args, jarvis: Jarvis) -> int:
+    """Set the API key, check it actually works, and save it. One step.
+
+    `./setup.sh` asks for this too, but only on a fresh run -- and getting it
+    wrong there means a silent fall back to the finance-only router, which
+    looks like Jarvis being stupid rather than Jarvis being switched off.
+    """
+    import os
+    from pathlib import Path
+
+    key = (args.key or "").strip()
+    if not key:
+        print("\n  Get a key at console.anthropic.com -> API keys ($5 of credit is plenty).")
+        try:
+            key = input("  Paste it here: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 1
+    if not key:
+        print("  Nothing pasted. Nothing changed.")
+        return 1
+    if not key.startswith("sk-"):
+        print("\n  That doesn't look like an Anthropic key -- they start with 'sk-'.")
+        print("  Nothing saved. Try again with the key from console.anthropic.com.\n")
+        return 1
+
+    print("\n  Checking it with Anthropic...")
+    os.environ["ANTHROPIC_API_KEY"] = key
+    from jarvis.doctor import check_mind_reaches_anthropic
+
+    verdict = check_mind_reaches_anthropic()
+    if verdict.status != "ok":
+        print(f"  That key didn't work: {verdict.detail}")
+        if verdict.fix:
+            print(f"  {verdict.fix}")
+        print("  Nothing saved.\n")
+        return 1
+
+    profile = Path.home() / ".bashrc"
+    existing = profile.read_text() if profile.exists() else ""
+    lines = [ln for ln in existing.splitlines() if "ANTHROPIC_API_KEY" not in ln]
+    lines.append(f"export ANTHROPIC_API_KEY={key}")
+    profile.write_text("\n".join(lines) + "\n")
+
+    print("  It works. Saved.\n")
+    print("  Close this Terminal, open a new one, and run:  jarvis\n")
     return 0
 
 
@@ -432,7 +482,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     start = sub.add_parser("start", help="the wake word and the full agent (default)")
-    start.add_argument("--window", action="store_true", help="force the pop-up window")
+    start.add_argument("--window", action="store_true", help="use the old tkinter window instead of the browser")
     start.add_argument("--no-window", action="store_true", help="stay in this terminal")
     start.add_argument("--no-voice", action="store_true", help="don't listen on the microphone")
     start.set_defaults(func=cmd_start)
@@ -452,6 +502,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "doctor", help="check everything and say what's broken"
     ).set_defaults(func=cmd_doctor)
+
+    key = sub.add_parser("key", help="set the Anthropic API key that makes him smart")
+    key.add_argument("key", nargs="?", help="the key; leave blank to be prompted")
+    key.set_defaults(func=cmd_key)
 
     sub.add_parser("wake", help="print the greeting once").set_defaults(func=cmd_wake)
 

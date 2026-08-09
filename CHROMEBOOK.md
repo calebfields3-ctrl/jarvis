@@ -139,10 +139,13 @@ there so it can never surprise you.
 jarvis
 ```
 
-That's the whole command. Nothing appears — he's listening.
+That's the whole command. **A browser tab opens with Jarvis in it** — dark,
+with a glowing reactor in the middle.
 
-**Now say "hey Jarvis" out loud.** A window pops up in front of whatever you're
-doing, and he answers out loud: *"Hello, sir. What can I do for you?"*
+**Now say "hey Jarvis" out loud.** The reactor speeds up and brightens while
+he's listening, and he answers: *"Hello, sir. What can I do for you?"*
+
+You can also type in the box at the bottom of the tab. Both work, always.
 
 He calls you **sir**, not by name — the computer voice mangles most real names,
 and hearing yours said wrong every single time gets old fast. If you'd rather
@@ -183,6 +186,16 @@ Type `y` and Enter to allow it. Anything else means no. A few things he won't
 do at all even if you say yes, and he'll tell you which.
 
 To stop him, hold **Ctrl + C**.
+
+**If he says he's using built-in routing**, he has no API key and can only
+answer finance questions. That is almost certainly why he says "I don't know"
+to ordinary sentences. Fix it in one command:
+
+```
+jarvis key
+```
+
+Paste your key when it asks. It checks the key actually works before saving it.
 
 **If he sounds robotic**, his good voice didn't install. Run:
 
