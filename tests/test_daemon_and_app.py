@@ -870,7 +870,13 @@ def test_the_run_script_uses_the_venv_python_by_full_path():
 
     text = (Path(__file__).resolve().parent.parent / "run").read_text()
     assert ".venv/bin/python" in text
-    assert "source" not in text, "activation is exactly what it must not need"
+    # Look at what it runs, not what it says -- the comments mention
+    # activation precisely to explain why it does not do it.
+    code = "\n".join(
+        line for line in text.splitlines() if not line.strip().startswith("#")
+    )
+    assert "source " not in code, "activation is exactly what it must not need"
+    assert "activate" not in code
 
 
 def test_the_run_script_says_what_to_do_when_nothing_is_installed():
